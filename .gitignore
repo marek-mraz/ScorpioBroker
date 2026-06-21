@@ -15,3 +15,13 @@ Go/pkg/
 *.iml
 .idea
 .vscode
+**/*.code-workspace
+.repomixignore
+apply_patch.txt
+apply_patch.js
+claude.md
+repomix-instruction.md
+repomix-output.md
+repomix.config.json
+scorpiobroker.code-workspace
+scorpiobroker.code-workspace

@@ -4,12 +4,12 @@ kind: ServiceAccount
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 555496e2de3765466a67664fc5046ce0499b0505
-    app.quarkus.io/vcs-uri: https://github.com/scorpiobroker/scorpiobroker.git
-    app.quarkus.io/build-timestamp: 2026-01-12 - 13:28:15 +0000
+    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
+    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 12:07:39 +0000
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
     app.kubernetes.io/managed-by: quarkus
   name: subscription-manager
 ---
@@ -18,7 +18,7 @@ kind: Role
 metadata:
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
   name: view-jobs
 rules:
   - apiGroups:
@@ -33,7 +33,7 @@ kind: RoleBinding
 metadata:
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
   name: subscription-manager-view-jobs
 roleRef:
   kind: Role
@@ -49,16 +49,16 @@ kind: Service
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 555496e2de3765466a67664fc5046ce0499b0505
-    app.quarkus.io/vcs-uri: https://github.com/scorpiobroker/scorpiobroker.git
-    app.quarkus.io/build-timestamp: 2026-01-12 - 13:28:15 +0000
+    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
+    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 12:07:39 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "10092"
     prometheus.io/scheme: http
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
     app.kubernetes.io/managed-by: quarkus
   name: subscription-manager
 spec:
@@ -69,7 +69,7 @@ spec:
       targetPort: 10092
   selector:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
   type: ClusterIP
 ---
 apiVersion: apps/v1
@@ -77,16 +77,16 @@ kind: Deployment
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 555496e2de3765466a67664fc5046ce0499b0505
-    app.quarkus.io/vcs-uri: https://github.com/scorpiobroker/scorpiobroker.git
-    app.quarkus.io/build-timestamp: 2026-01-12 - 13:28:15 +0000
+    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
+    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 12:07:39 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "10092"
     prometheus.io/scheme: http
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
     app.kubernetes.io/managed-by: quarkus
   name: subscription-manager
 spec:
@@ -94,14 +94,14 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: subscription-manager
-      app.kubernetes.io/version: 6.0.1-SNAPSHOT
+      app.kubernetes.io/version: 7.0.0
   template:
     metadata:
       annotations:
         app.quarkus.io/quarkus-version: 3.28.4
-        app.quarkus.io/commit-id: 555496e2de3765466a67664fc5046ce0499b0505
-        app.quarkus.io/vcs-uri: https://github.com/scorpiobroker/scorpiobroker.git
-        app.quarkus.io/build-timestamp: 2026-01-12 - 13:28:15 +0000
+        app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
+        app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
+        app.quarkus.io/build-timestamp: 2026-06-21 - 12:07:39 +0000
         prometheus.io/scrape: "true"
         prometheus.io/path: /q/metrics
         prometheus.io/port: "10092"
@@ -109,7 +109,7 @@ spec:
       labels:
         app.kubernetes.io/managed-by: quarkus
         app.kubernetes.io/name: subscription-manager
-        app.kubernetes.io/version: 6.0.1-SNAPSHOT
+        app.kubernetes.io/version: 7.0.0
     spec:
       containers:
         - env:
@@ -117,21 +117,21 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: gateway
-              value: http://localhost:9090
-            - name: dbhost
-              value: localhost
-            - name: dbport
-              value: "5432"
-            - name: dbpass
-              value: ngb
             - name: dbuser
               value: ngb
             - name: dbname
               value: ngb
+            - name: dbpass
+              value: ngb
+            - name: dbhost
+              value: localhost
+            - name: dbport
+              value: "5432"
+            - name: gateway
+              value: http://localhost:9090
             - name: QUARKUS_FLYWAY_ACTIVE
               value: "false"
-          image: docker.io/hebgen/subscription-manager:6.0.1-SNAPSHOT
+          image: docker.io/dev/subscription-manager:7.0.0
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
@@ -192,7 +192,7 @@ spec:
               value: "true"
             - name: QUARKUS_FLYWAY_ACTIVE
               value: "true"
-          image: docker.io/hebgen/subscription-manager:6.0.1-SNAPSHOT
+          image: docker.io/dev/subscription-manager:7.0.0
           name: subscription-manager-flyway-init
       restartPolicy: OnFailure
       serviceAccountName: subscription-manager
@@ -202,19 +202,19 @@ kind: ServiceMonitor
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 555496e2de3765466a67664fc5046ce0499b0505
-    app.quarkus.io/vcs-uri: https://github.com/scorpiobroker/scorpiobroker.git
-    app.quarkus.io/build-timestamp: 2026-01-12 - 13:28:15 +0000
+    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
+    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 12:07:39 +0000
   labels:
     app.kubernetes.io/name: subscription-manager
-    app.kubernetes.io/version: 6.0.1-SNAPSHOT
+    app.kubernetes.io/version: 7.0.0
     app.kubernetes.io/managed-by: quarkus
   name: subscription-manager
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: subscription-manager
-      app.kubernetes.io/version: 6.0.1-SNAPSHOT
+      app.kubernetes.io/version: 7.0.0
   endpoints:
     - scheme: http
       targetPort: 10092

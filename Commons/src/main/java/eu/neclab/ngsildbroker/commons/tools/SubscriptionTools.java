@@ -628,13 +628,14 @@ public class SubscriptionTools {
 	public static SubscriptionRequest generateRemoteSubscription(SubscriptionRequest subscriptionRequest,
 			InternalNotification message) throws ResponseException {
 		Map<String, Object> registryEntry = message.getPayload();
-		String tenant;
+		// tenant is expanded as an @id (NGSI-LD core context defines it as @type: @id).
+		// Single assignment keeps `tenant` effectively final for any lambda capture below.
+		String extractedTenant = null;
 		if (registryEntry.containsKey(NGSIConstants.NGSI_LD_TENANT)) {
-			tenant = ((List<Map<String, String>>) registryEntry.get(NGSIConstants.NGSI_LD_TENANT)).get(0)
-					.get(NGSIConstants.JSON_LD_VALUE);
-		} else {
-			tenant = AppConstants.INTERNAL_NULL_KEY;
+			extractedTenant = ((List<Map<String, String>>) registryEntry.get(NGSIConstants.NGSI_LD_TENANT)).get(0)
+					.get(NGSIConstants.JSON_LD_ID);
 		}
+		String tenant = extractedTenant == null ? AppConstants.INTERNAL_NULL_KEY : extractedTenant;
 		Map<String, Object> newSub = MicroServiceUtils.deepCopyMap(subscriptionRequest.getPayload());
 		clearEntitiesAndWatchedAttribs(newSub, registryEntry);
 		clearGeoQuery(newSub, registryEntry);

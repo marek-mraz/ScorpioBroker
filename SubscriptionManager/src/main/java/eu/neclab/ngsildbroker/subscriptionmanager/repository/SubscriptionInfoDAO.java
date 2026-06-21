@@ -3,6 +3,7 @@ package eu.neclab.ngsildbroker.subscriptionmanager.repository;
 import com.github.jsonldjava.core.JsonLDService;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Table;
+import io.smallrye.mutiny.Multi;
 
 import eu.neclab.ngsildbroker.commons.constants.AppConstants;
 import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
@@ -30,6 +31,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -244,66 +246,72 @@ public class SubscriptionInfoDAO {
 	}
 
 	public Uni<List<Tuple4<String, Map<String, Object>, String, Map<String, Object>>>> loadSubscriptions() {
+		return connectionManager.executeQuery(null, "select jsonb_object_agg(id,body) as col from public.contexts", null, false).onItem().transformToUni(ctxRows -> {
+			JsonObject jsonContexts = ctxRows.iterator().next().getJsonObject(0);
+			Map<String, Object> mapContexts = jsonContexts != null ? jsonContexts.getMap() : new HashMap<>();
 
-		return connectionManager.executeQuery(null, "select tenant_id from tenant", null, false).onItem()
-				.transformToUni(rows -> {
-					List<Uni<RowSet<Row>>> unis = Lists.newArrayList();
-					rows.forEach(row -> {
+			return connectionManager.executeQuery(null, "select tenant_id from tenant", null, false).onItem()
+					.transformToUni(rows -> {
+						List<Tuple2<String, String>> tenantList = new ArrayList<>();
+						rows.forEach(row -> tenantList.add(Tuple2.of(row.getString(0), row.getString(0))));
+						tenantList.add(Tuple2.of(AppConstants.INTERNAL_NULL_KEY, null)); // null = default/internal
 
-						unis.add(connectionManager.executeQuery(row.getString(0), "SELECT '" + row.getString(0)
-								+ "', subscriptions.subscription, context as contextId, contexts.body as contextBody FROM subscriptions LEFT JOIN contexts ON subscriptions.context = contexts.id",
-								null, false));
+						// Process tenants sequentially to avoid exhausting the DB connection pool
+						return Multi.createFrom().iterable(tenantList)
+								.onItem().transformToUniAndConcatenate(tenantInfo -> {
+									String tenantId = tenantInfo.getItem1();
+									String tenantLabel = tenantInfo.getItem2();
+									String tenantDisplay = tenantLabel != null ? tenantLabel : "default/internal";
+									logger.info("Loading subscriptions for tenant '" + tenantDisplay + "'");
+									return connectionManager.executeQuery(tenantLabel, "SELECT '" + tenantId
+											+ "', subscription, context as contextId FROM subscriptions",
+											null, false)
+											.onItem().transform(rowSet -> {
+												List<Tuple4<String, Map<String, Object>, String, Map<String, Object>>> batch = new ArrayList<>();
+												rowSet.forEach(row -> {
+													String tenant = row.getString(0);
+													Map<String, Object> sub = row.getJsonObject(1).getMap();
+													String ctxId = row.getString(2);
+													Map<String, Object> ctxMap = (Map<String, Object>) mapContexts.get(ctxId);
+													if (ctxMap == null) {
+														logger.error("Failed to read context for subscription '" 
+																+ sub.get(NGSIConstants.JSON_LD_ID) + "' on tenant '" + tenant + "'");
+													}
+													batch.add(Tuple4.of(tenant, sub, ctxId, ctxMap));
+												});
+												logger.info("Loaded "+batch.size()+" subscriptions for tenant '" + tenantDisplay + "'");
+												return batch;
+											}).onFailure().recoverWithItem(e -> {
+												logger.error("Failed to load subscriptions for tenant '" + tenantDisplay + "'", e);
+												return new ArrayList<>();
+											});
+								})
+								.collect().in(ArrayList::new, List::addAll);
 					});
-					unis.add(connectionManager.executeQuery(null, "SELECT '" + AppConstants.INTERNAL_NULL_KEY
-							+ "', subscriptions.subscription, context as contextId, contexts.body as contextBody FROM subscriptions LEFT JOIN contexts ON subscriptions.context = contexts.id",
-							null, false));
-					return Uni.combine().all().unis(unis).with(list -> {
-						List<Tuple4<String, Map<String, Object>, String, Map<String, Object>>> result = new ArrayList<>();
-						for (Object obj : list) {
-							@SuppressWarnings("unchecked")
-							RowSet<Row> rowset = (RowSet<Row>) obj;
-							rowset.forEach(row -> {
-								String tenant = row.getString(0);
-								Map<String, Object> sub = row.getJsonObject(1).getMap();
-								String ctxId = row.getString(2);
-								JsonObject ctx = row.getJsonObject(3);
-								Map<String, Object> ctxMap;
-								if (ctx == null) {
-									logger.error("Failed to read context for subscription "
-											+ sub.get(NGSIConstants.JSON_LD_ID) + " on tenant " + tenant);
-									ctxMap = null;
-								} else {
-									ctxMap = ctx.getMap();
-								}
-								result.add(Tuple4.of(tenant, sub, ctxId, ctxMap));
-							});
-						}
-						return result;
-					});
-				});
-
+		});
 	}
 
 	public Uni<Tuple3<Map<String, Object>, String, Map<String, Object>>> loadSubscription(String tenant, String id) {
-		return connectionManager.executeQuery(tenant, "select tenant_id from tenant", Tuple.of(id), false).onItem()
-				.transform(rows -> {
+		return connectionManager.executeQuery(tenant, "SELECT subscription, context FROM subscriptions WHERE subscription_id=$1", Tuple.of(id), false).onItem()
+				.transformToUni(rows -> {
 					if (rows.size() == 0) {
 						Tuple3<Map<String, Object>, String, Map<String, Object>> r = Tuple3.of(null, null, null);
-						return r;
+						return Uni.createFrom().item(r);
 					}
 					Row first = rows.iterator().next();
 					Map<String, Object> subscription = first.getJsonObject(0).getMap();
 					String contextId = first.getString(1);
-					JsonObject ctx = first.getJsonObject(2);
-					Map<String, Object> ctxMap;
-					if (ctx == null) {
-						logger.error("Failed to read context for subscription " + id + " on tenant " + tenant);
-						ctxMap = null;
-					} else {
-						ctxMap = ctx.getMap();
-					}
-					return Tuple3.of(subscription, contextId, ctxMap);
 
+					return connectionManager.executeQuery(null, "SELECT body FROM contexts WHERE id=$1", Tuple.of(contextId), false)
+							.onItem().transform(ctxRows -> {
+								Map<String, Object> ctxMap = null;
+								if (ctxRows.size() > 0) {
+									ctxMap = ctxRows.iterator().next().getJsonObject(0).getMap();
+								} else {
+									logger.error("Failed to read context for subscription '" + id + "' on tenant '" + tenant + "'");
+								}
+								return Tuple3.of(subscription, contextId, ctxMap);
+							});
 				});
 	}
 

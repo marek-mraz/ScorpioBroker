@@ -165,13 +165,15 @@ public class RegistrationEntry {
 		boolean canDoBatchOp = false;
 		String host = (String) ((List<Map<String, Object>>) payload.get(NGSIConstants.NGSI_LD_ENDPOINT)).get(0)
 				.get(NGSIConstants.JSON_LD_VALUE);
-		String tenant;
+		// tenant is expanded as an @id (NGSI-LD core context defines it as @type: @id),
+		// so read JSON_LD_ID here (see HttpUtils#getHeadersForRemoteCall / CSourceService).
+		// Single assignment keeps `tenant` effectively final for the lambda capture below.
+		String extractedTenant = null;
 		if (payload.containsKey(NGSIConstants.NGSI_LD_TENANT)) {
-			tenant = (String) ((List<Map<String, Object>>) payload.get(NGSIConstants.NGSI_LD_TENANT)).get(0)
-					.get(NGSIConstants.JSON_LD_VALUE);
-		} else {
-			tenant = AppConstants.INTERNAL_NULL_KEY;
+			extractedTenant = (String) ((List<Map<String, Object>>) payload.get(NGSIConstants.NGSI_LD_TENANT)).get(0)
+					.get(NGSIConstants.JSON_LD_ID);
 		}
+		String tenant = extractedTenant == null ? AppConstants.INTERNAL_NULL_KEY : extractedTenant;
 		String cSourceId = (String) payload.get(NGSIConstants.JSON_LD_ID);
 		List<Map<String, Object>> csourceInfo = (List<Map<String, Object>>) payload
 				.get("https://uri.etsi.org/ngsi-ld/contextSourceInfo");

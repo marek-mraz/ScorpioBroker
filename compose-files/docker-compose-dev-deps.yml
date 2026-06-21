@@ -1,0 +1,46 @@
+# Dev-only dependencies for running Scorpio from source (AllInOneRunner / individual MS).
+# Postgres + Kafka only. Brought up with:
+#   docker compose -f compose-files/docker-compose-dev-deps.yml up -d
+# Then attach your dev container to this network so it can resolve the hostnames:
+#   docker network connect compose-files_default <your-container>
+# Notes:
+#  - On arm64 the official postgis image is amd64-only -> imresamu/postgis is multi-arch.
+#  - Kafka advertises its CONTAINER HOSTNAME (scorpio-dev-kafka), so any client on this
+#    network reaches it correctly. (Publishing 9092 on the host is only for convenience.)
+services:
+  postgres:
+    image: imresamu/postgis:16-3.5
+    container_name: scorpio-dev-postgres
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: scorpio-dev-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://scorpio-dev-kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_MS: 10000
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000

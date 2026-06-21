@@ -8,7 +8,7 @@ app:
     dbport: "5432"
     dbuser: ngb
     gateway: http://localhost:9090
-  image: docker.io/hebgen/query-manager:6.0.1-SNAPSHOT
+  image: docker.io/dev/query-manager:7.0.0
   livenessProbe:
     failureThreshold: 3
     httpGet:

@@ -14,7 +14,7 @@ spec:
               value: "true"
             - name: QUARKUS_FLYWAY_ACTIVE
               value: "true"
-          image: docker.io/hebgen/history-entity-manager:6.0.1-SNAPSHOT
+          image: docker.io/dev/history-entity-manager:7.0.0
           name: history-entity-manager-flyway-init
       restartPolicy: OnFailure
       serviceAccountName: history-entity-manager

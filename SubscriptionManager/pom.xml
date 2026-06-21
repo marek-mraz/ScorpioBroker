@@ -8,7 +8,7 @@
 	<parent>
 		<groupId>eu.neclab.ngsildbroker</groupId>
 		<artifactId>broker-parent</artifactId>
-		<version>6.0.1-SNAPSHOT</version>
+		<version>7.0.0</version>
 		<relativePath>../BrokerParent</relativePath>
 	</parent>
 	<profiles>
@@ -207,6 +207,10 @@
 		<dependency>
 			<groupId>io.quarkus</groupId>
 			<artifactId>quarkus-rest-client-jackson</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.quarkus</groupId>
+			<artifactId>quarkus-smallrye-health</artifactId>
 		</dependency>
 	</dependencies>
 </project>

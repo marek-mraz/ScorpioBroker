@@ -544,7 +544,7 @@ public final class HttpUtils {
 			result.add("Accept", "application/json");
 		}
 		//
-		if (!tenant.equals(AppConstants.INTERNAL_NULL_KEY)) {
+		if (tenant != null && !tenant.equals(AppConstants.INTERNAL_NULL_KEY)) {
 			result.add(NGSIConstants.TENANT_HEADER, tenant);
 		}
 		return result;

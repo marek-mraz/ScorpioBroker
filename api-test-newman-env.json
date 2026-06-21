@@ -1,0 +1,17 @@
+{
+	"id": "scorpio-aaio-newman-env",
+	"name": "Scorpio AAIO localhost (newman)",
+	"values": [
+		{ "key": "entity-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "query-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "subscription-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "registry-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "registry-subscription-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "history-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "history-entity-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "history-query-manager", "value": "http://localhost:9090", "enabled": true },
+		{ "key": "notificationserver", "value": "http://localhost:8080", "enabled": true },
+		{ "key": "notificationserver-external", "value": "http://localhost:8080", "enabled": true }
+	],
+	"_postman_variable_scope": "environment"
+}

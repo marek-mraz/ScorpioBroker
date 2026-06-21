@@ -68,6 +68,7 @@ import io.netty.handler.codec.mqtt.MqttQoS;
 import io.quarkus.runtime.Startup;
 import io.quarkus.scheduler.Scheduled;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.smallrye.mutiny.tuples.Tuple2;
 import io.smallrye.mutiny.tuples.Tuple4;
 import io.vertx.core.http.impl.headers.HeadersMultiMap;
@@ -87,6 +88,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 @ApplicationScoped
 @Startup
@@ -132,6 +135,9 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	@ConfigProperty(name = "scorpio.querymanager.url")
 	private String queryServiceUrl;
 
+	@ConfigProperty(name = "scorpio.subscription.notification.worker-thread", defaultValue = "false")
+	boolean notificationOnWorkerThread;
+
 	private String ALL_TYPES_SUB;
 
 	private Table<String, SubscriptionRemoteHost, Set<String>> tenant2RemoteHost2SubIds = HashBasedTable.create();
@@ -156,7 +162,20 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	private final Object tableLock = new Object();
 
+	private volatile boolean ready = false;
+	private final Queue<BaseRequest> startupEntityBuffer = new ConcurrentLinkedQueue<>();
+	private final Queue<CSourceBaseRequest> startupCsourceBuffer = new ConcurrentLinkedQueue<>();
+
+	public boolean isReady() {
+		return ready;
+	}
+
 	public Uni<Void> handleRegistryChange(CSourceBaseRequest req) {
+		if (!ready) {
+			startupCsourceBuffer.offer(req);
+			logger.debug("Buffering registry change during startup: {}", req.getId());
+			return Uni.createFrom().voidItem();
+		}
 		return RegistrationEntry.fromRegPayload(req.getPayload(), ldService).onItem().transformToUni(regs -> {
 			List<RegistrationEntry> queryNewRegs = Lists.newArrayList();
 			List<RegistrationEntry> subscriptionNewRegs = Lists.newArrayList();
@@ -371,6 +390,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	@PostConstruct
 	void startup() {
+		logger.info("Starting SubscriptionService initialization - loading subscriptions and registries");		
 		this.webClient = WebClient.create(vertx);
 		ALL_TYPES_SUB = NGSIConstants.NGSI_LD_DEFAULT_PREFIX + allTypeSubType;
 		Uni<Void> loadSubs = subDAO.loadSubscriptions().onItem().transformToUni(subs -> {
@@ -389,6 +409,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 					Tuple4<String, Map<String, Object>, String, Context> tuple = (Tuple4<String, Map<String, Object>, String, Context>) obj;
 					SubscriptionRequest request;
 
+					logger.debug("Loaded subscription {} with id {} for tenant {}", tuple.getItem1(), tuple.getItem2().get(NGSIConstants.JSON_LD_ID), tuple.getItem3());
 					try {
 						request = new SubscriptionRequest(tuple.getItem1(), tuple.getItem2(), tuple.getItem4());
 						request.setContextId(tuple.getItem3());
@@ -412,7 +433,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						}
 						subscriptionId2RequestGlobal.put(request.getId(), request);
 					} catch (Exception e) {
-						logger.error("Failed to load stored subscription " + tuple.getItem1());
+						logger.error("Failed to load stored subscription " + tuple.getItem1(), e);
 					}
 				}
 				return null;
@@ -449,9 +470,44 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			});
 			return Uni.createFrom().voidItem();
 		});
-		Uni.combine().all().unis(loadSubs, loadRegs).with(l -> l).await().indefinitely();
+		try {
+			loadRegs.await().atMost(Duration.ofSeconds(30));
+		} catch (Exception e) {
+			logger.error("SubscriptionService initialization failed during registry loading: " + e.getMessage(), e);
+			throw new RuntimeException("SubscriptionService initialization failed during registry loading", e);
+		}
+		try {
+			loadSubs.await().atMost(Duration.ofSeconds(30));
+		} catch (Exception e) {
+			logger.error("SubscriptionService initialization failed during subscription loading: " + e.getMessage(), e);
+			throw new RuntimeException("SubscriptionService initialization failed during subscription loading", e);
+		}
+
 		this.microServiceUtils.registerBaseRequestReceiver(this);
 		this.microServiceUtils.registerCSourceReceiver(this);
+
+		this.ready = true;
+		drainStartupBuffers();
+		logger.info("SubscriptionService initialization completed successfully");
+	}
+
+	private void drainStartupBuffers() {
+		logger.info("Draining {} buffered entity messages and {} buffered csource messages",
+				startupEntityBuffer.size(), startupCsourceBuffer.size());
+		CSourceBaseRequest csourceMsg;
+		while ((csourceMsg = startupCsourceBuffer.poll()) != null) {
+			final CSourceBaseRequest msg = csourceMsg;
+			handleRegistryChange(msg).subscribe().with(
+					v -> logger.debug("Drained csource message: {}", msg.getId()),
+					e -> logger.error("Error draining csource message: {}", msg.getId(), e));
+		}
+		BaseRequest entityMsg;
+		while ((entityMsg = startupEntityBuffer.poll()) != null) {
+			final BaseRequest msg = entityMsg;
+			handleBaseRequest(msg).subscribe().with(
+					v -> logger.debug("Drained entity message for: {}", msg.getIds()),
+					e -> logger.error("Error draining entity message for: {}", msg.getIds(), e));
+		}
 	}
 
 	private boolean isIntervalSub(SubscriptionRequest request) {
@@ -800,22 +856,29 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	}
 
 	public Uni<Void> handleBaseRequest(BaseRequest message) {
+		if (!ready) {
+			startupEntityBuffer.offer(message);
+			logger.debug("Buffering entity message during startup for ids: {}", message.getIds());
+			return Uni.createFrom().voidItem();
+		}
 		Collection<SubscriptionRequest> potentialSubs;
 		synchronized (tableLock) {
 			// Copy the values to avoid concurrent modification issues
 			potentialSubs = List.copyOf(tenant2subscriptionId2Subscription.row(message.getTenant()).values());
 		}
-		return checkSubscriptions(message, potentialSubs);
+		return Uni.createFrom().voidItem()
+				.emitOn(Infrastructure.getDefaultWorkerPool())
+				.onItem().transformToUni(v -> checkSubscriptions(message, potentialSubs));
 	}
 
 	public Uni<Void> checkSubscriptions(BaseRequest message, Collection<SubscriptionRequest> potentialSubs) {
 		List<Uni<Void>> unis = Lists.newArrayList();
-		logger.debug("checking subscriptions");
+		logger.debug("matching subscriptions to message with ids {} and tenant {}", message.getIds(), message.getTenant());
 		// logger.debug(message.toString());
 
 		for (SubscriptionRequest potentialSub : potentialSubs) {
-			logger.debug("Potential Sub");
-			logger.debug(potentialSub.toString());
+			// logger.debug("Potential Sub");
+			// logger.debug(potentialSub.toString());
 			List<Map<String, Object>> dataToSend = Lists.newArrayList();
 
 			if ((potentialSub.getSendTimestamp() != -1 && potentialSub.getSendTimestamp() > message.getSendTimestamp())
@@ -1235,8 +1298,12 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		if (dataToSend == null || dataToSend.isEmpty()) {
 			return Uni.createFrom().voidItem();
 		}
-		return SubscriptionTools.generateNotification(potentialSub, dataToSend, ldService).onItem()
-				.transformToUni(notification -> {
+		long notificationStartTime = System.currentTimeMillis();
+		Uni<Map<String, Object>> generated = SubscriptionTools.generateNotification(potentialSub, dataToSend, ldService);
+		if (notificationOnWorkerThread) {
+			generated = generated.emitOn(Infrastructure.getDefaultWorkerPool());
+		}
+		return generated.onItem().transformToUni(notification -> {
 					NotificationParam notificationParam = potentialSub.getSubscription().getNotification();
 					Uni<Void> toSend;
 					switch (notificationParam.getEndPoint().getUri().getScheme()) {
@@ -1263,6 +1330,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 														// TODO what the fuck is the result here
 													}
 													long now = System.currentTimeMillis();
+													logger.debug(
+															"MQTT notification for subscription {} completed in {} ms",
+															potentialSub.getId(),
+															now - notificationStartTime);
 													potentialSub.getSubscription().getNotification()
 															.setLastSuccessfulNotification(now);
 													potentialSub.getSubscription().getNotification()
@@ -1300,6 +1371,11 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						}
 						case "http", "https" -> {
 							try {
+								logger.debug(
+										"Sending HTTP notification for subscription {} to endpoint {}, payload size: {} entities",
+										potentialSub.getId(),
+										notificationParam.getEndPoint().getUri().toString(),
+										dataToSend.size());
 								toSend = webClient.postAbs(notificationParam.getEndPoint().getUri().toString())
 										.putHeaders(SubscriptionTools.getHeaders(notificationParam,
 												potentialSub.getSubscription().getOtherHead()))
@@ -1307,6 +1383,11 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 										.retry().atMost(3).onItem().transformToUni(result -> {
 											int statusCode = result.statusCode();
 											long now = System.currentTimeMillis();
+											logger.debug(
+													"HTTP notification for subscription {} completed in {} ms with status {}",
+													potentialSub.getId(),
+													now - notificationStartTime,
+													statusCode);
 											if (statusCode >= 200 && statusCode < 300) {
 												potentialSub.getSubscription().getNotification()
 														.setLastSuccessfulNotification(now);
@@ -1487,6 +1568,9 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	@Scheduled(every = "${scorpio.subscription.checkinterval}", delayed = "${scorpio.startupdelay}")
 	Uni<Void> checkIntervalSubs() {
+		if (!ready) {
+			return Uni.createFrom().voidItem();
+		}
 		List<Uni<Void>> unis = Lists.newArrayList();
 		logger.debug("acquiring log for interval");
 		synchronized (tableLock) {

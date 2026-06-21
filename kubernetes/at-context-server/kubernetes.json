@@ -4,13 +4,13 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "555496e2de3765466a67664fc5046ce0499b0505",
-      "app.quarkus.io/vcs-uri" : "https://github.com/scorpiobroker/scorpiobroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-01-12 - 13:32:31 +0000"
+      "app.quarkus.io/commit-id" : "ad732baf0fb16718b594ca0db65c1e85b5e7d972",
+      "app.quarkus.io/vcs-uri" : "https://github.com/Mrazbb/ScorpioBroker.git",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 12:08:11 +0000"
     },
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT",
+      "app.kubernetes.io/version" : "7.0.0",
       "app.kubernetes.io/managed-by" : "quarkus"
     },
     "name" : "at-context-server"
@@ -21,7 +21,7 @@
   "metadata" : {
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+      "app.kubernetes.io/version" : "7.0.0"
     },
     "name" : "view-jobs"
   },
@@ -36,7 +36,7 @@
   "metadata" : {
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+      "app.kubernetes.io/version" : "7.0.0"
     },
     "name" : "at-context-server-view-jobs"
   },
@@ -56,9 +56,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "555496e2de3765466a67664fc5046ce0499b0505",
-      "app.quarkus.io/vcs-uri" : "https://github.com/scorpiobroker/scorpiobroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-01-12 - 13:32:31 +0000",
+      "app.quarkus.io/commit-id" : "ad732baf0fb16718b594ca0db65c1e85b5e7d972",
+      "app.quarkus.io/vcs-uri" : "https://github.com/Mrazbb/ScorpioBroker.git",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 12:08:11 +0000",
       "prometheus.io/scrape" : "true",
       "prometheus.io/path" : "/q/metrics",
       "prometheus.io/port" : "10097",
@@ -66,7 +66,7 @@
     },
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT",
+      "app.kubernetes.io/version" : "7.0.0",
       "app.kubernetes.io/managed-by" : "quarkus"
     },
     "name" : "at-context-server"
@@ -80,7 +80,7 @@
     } ],
     "selector" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+      "app.kubernetes.io/version" : "7.0.0"
     },
     "type" : "ClusterIP"
   }
@@ -90,9 +90,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "555496e2de3765466a67664fc5046ce0499b0505",
-      "app.quarkus.io/vcs-uri" : "https://github.com/scorpiobroker/scorpiobroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-01-12 - 13:32:31 +0000",
+      "app.quarkus.io/commit-id" : "ad732baf0fb16718b594ca0db65c1e85b5e7d972",
+      "app.quarkus.io/vcs-uri" : "https://github.com/Mrazbb/ScorpioBroker.git",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 12:08:11 +0000",
       "prometheus.io/scrape" : "true",
       "prometheus.io/path" : "/q/metrics",
       "prometheus.io/port" : "10097",
@@ -100,7 +100,7 @@
     },
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT",
+      "app.kubernetes.io/version" : "7.0.0",
       "app.kubernetes.io/managed-by" : "quarkus"
     },
     "name" : "at-context-server"
@@ -110,16 +110,16 @@
     "selector" : {
       "matchLabels" : {
         "app.kubernetes.io/name" : "at-context-server",
-        "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+        "app.kubernetes.io/version" : "7.0.0"
       }
     },
     "template" : {
       "metadata" : {
         "annotations" : {
           "app.quarkus.io/quarkus-version" : "3.28.4",
-          "app.quarkus.io/commit-id" : "555496e2de3765466a67664fc5046ce0499b0505",
-          "app.quarkus.io/vcs-uri" : "https://github.com/scorpiobroker/scorpiobroker.git",
-          "app.quarkus.io/build-timestamp" : "2026-01-12 - 13:32:31 +0000",
+          "app.quarkus.io/commit-id" : "ad732baf0fb16718b594ca0db65c1e85b5e7d972",
+          "app.quarkus.io/vcs-uri" : "https://github.com/Mrazbb/ScorpioBroker.git",
+          "app.quarkus.io/build-timestamp" : "2026-06-21 - 12:08:11 +0000",
           "prometheus.io/scrape" : "true",
           "prometheus.io/path" : "/q/metrics",
           "prometheus.io/port" : "10097",
@@ -128,7 +128,7 @@
         "labels" : {
           "app.kubernetes.io/managed-by" : "quarkus",
           "app.kubernetes.io/name" : "at-context-server",
-          "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+          "app.kubernetes.io/version" : "7.0.0"
         }
       },
       "spec" : {
@@ -141,10 +141,13 @@
               }
             }
           }, {
-            "name" : "dbpass",
+            "name" : "dbuser",
             "value" : "ngb"
           }, {
-            "name" : "dbuser",
+            "name" : "gateway",
+            "value" : "http://localhost:9090"
+          }, {
+            "name" : "dbpass",
             "value" : "ngb"
           }, {
             "name" : "dbhost",
@@ -153,16 +156,13 @@
             "name" : "dbname",
             "value" : "ngb"
           }, {
-            "name" : "gateway",
-            "value" : "http://localhost:9090"
-          }, {
             "name" : "dbport",
             "value" : "5432"
           }, {
             "name" : "QUARKUS_FLYWAY_ACTIVE",
             "value" : "false"
           } ],
-          "image" : "docker.io/hebgen/at-context-server:6.0.1-SNAPSHOT",
+          "image" : "docker.io/dev/at-context-server:7.0.0",
           "imagePullPolicy" : "Always",
           "livenessProbe" : {
             "failureThreshold" : 3,
@@ -236,7 +236,7 @@
             "name" : "QUARKUS_FLYWAY_ACTIVE",
             "value" : "true"
           } ],
-          "image" : "docker.io/hebgen/at-context-server:6.0.1-SNAPSHOT",
+          "image" : "docker.io/dev/at-context-server:7.0.0",
           "name" : "at-context-server-flyway-init"
         } ],
         "restartPolicy" : "OnFailure",
@@ -250,13 +250,13 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "555496e2de3765466a67664fc5046ce0499b0505",
-      "app.quarkus.io/vcs-uri" : "https://github.com/scorpiobroker/scorpiobroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-01-12 - 13:32:31 +0000"
+      "app.quarkus.io/commit-id" : "ad732baf0fb16718b594ca0db65c1e85b5e7d972",
+      "app.quarkus.io/vcs-uri" : "https://github.com/Mrazbb/ScorpioBroker.git",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 12:08:11 +0000"
     },
     "labels" : {
       "app.kubernetes.io/name" : "at-context-server",
-      "app.kubernetes.io/version" : "6.0.1-SNAPSHOT",
+      "app.kubernetes.io/version" : "7.0.0",
       "app.kubernetes.io/managed-by" : "quarkus"
     },
     "name" : "at-context-server"
@@ -265,7 +265,7 @@
     "selector" : {
       "matchLabels" : {
         "app.kubernetes.io/name" : "at-context-server",
-        "app.kubernetes.io/version" : "6.0.1-SNAPSHOT"
+        "app.kubernetes.io/version" : "7.0.0"
       }
     },
     "endpoints" : [ {
