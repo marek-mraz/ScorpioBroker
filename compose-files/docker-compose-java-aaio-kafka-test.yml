@@ -45,6 +45,8 @@ services:
       POSTGRES_DB: ngb
   scorpio:
     image: scorpiobroker/all-in-one-runner:java-kafka-latest
+    extra_hosts:                                   
+      - "host.docker.internal:host-gateway"        
     ports:
       - "9090:9090"
     environment:

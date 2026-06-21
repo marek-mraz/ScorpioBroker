@@ -152,9 +152,24 @@ jobs:
       - name: Config ETSI Testsuite
         run: |
           cd ngsi-ld-test-suite/resources/
-          echo -e "url = 'http://localhost:9090/ngsi-ld/v1'\ntemporal_api_url = 'http://localhost:9090/ngsi-ld/v1'\n$(tail -n +3 variables.py)" > variables.py
-          sed -i -e 's/0.0.0.0/localhost/g' variables.py
-          sed -i -e 's/127.0.0.1/localhost/g' variables.py
+          
+          # Overwrite the top of variables.py to use host.docker.internal 
+          # so Scorpio inside Docker knows how to reach the GitHub runner webhook
+          cat <<EOF > variables.py.new
+          url = 'http://localhost:9090/ngsi-ld/v1'
+          temporal_api_url = 'http://localhost:9090/ngsi-ld/v1'
+          ngsild_test_suite_context = 'https://forge.etsi.org/rep/cim/ngsi-ld-test-suite/-/raw/develop/resources/jsonld-contexts/ngsi-ld-test-suite-compound.jsonld'
+          notification_server_host = 'host.docker.internal'
+          notification_server_port = 8085
+          context_source_host = 'host.docker.internal'
+          context_source_port = 8086
+          context_server_host = 'host.docker.internal'
+          context_server_port = 8087
+          EOF
+          
+          # Append the rest of the default ETSI variables.py (skipping the original first 10 lines)
+          tail -n +11 variables.py >> variables.py.new
+          mv variables.py.new variables.py
 
       - name: Start ETSI Testsuite
         run: |
@@ -164,8 +179,11 @@ jobs:
           virtualenv .venv 
           source .venv/bin/activate
           pip install -r requirements.txt
-          # Run complete test suite (ignoring exit code so we can parse errors)
-          robot --outputdir ./results . || true
+          
+          # Run tests against the TP/NGSI-LD folder
+          # Exclude 'iop' (requires 5 brokers)
+          # Exclude 'mqtt' (requires an MQTT broker like Mosquitto)
+          robot --exclude mqtt --exclude iop --outputdir ./results ./TP/NGSI-LD || true
 
       - name: Extract ETSI Errors to Separated File
         if: always()
