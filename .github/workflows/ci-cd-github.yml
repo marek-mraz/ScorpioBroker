@@ -136,6 +136,10 @@ jobs:
           docker load -i scorpio-image.tar
           docker tag scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} scorpiobroker/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-latest
 
+      - name: Build Test dependencies
+        run: |
+          cd testserver && docker build -t testserver .
+
       - name: Start Environment (Docker Compose)
         run: |
           docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml up > dockerout.log 2>&1 &
