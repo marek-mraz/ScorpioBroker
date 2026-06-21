@@ -112,16 +112,46 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: API-Test-Reports
+          name: API-Reports
           path: test-reports/
 
   # ==========================================
-  # 2B. TEST ETSI JOB: Runs Robot Framework
+  # 2B. TEST ETSI JOB: Runs Robot Framework (Matrix Parallel)
   # ==========================================
   test-etsi:
-    name: Run ETSI Tests
+    name: Run ETSI Tests (${{ matrix.name }})
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: CommonBehaviours
+            path: CommonBehaviours
+          - name: Consumption-Discovery
+            path: ContextInformation/Consumption/Discovery
+          - name: Consumption-Entity
+            path: ContextInformation/Consumption/Entity
+          - name: Consumption-TemporalEntity
+            path: ContextInformation/Consumption/TemporalEntity
+          - name: Provision-BatchEntities
+            path: ContextInformation/Provision/BatchEntities
+          - name: Provision-Entities
+            path: ContextInformation/Provision/Entities
+          - name: Provision-EntityAttributes
+            path: ContextInformation/Provision/EntityAttributes
+          - name: Provision-TemporalEntity
+            path: ContextInformation/Provision/TemporalEntity
+          - name: Provision-TemporalEntityAttributes
+            path: ContextInformation/Provision/TemporalEntityAttributes
+          - name: Subscription
+            path: ContextInformation/Subscription
+          - name: ContextSource
+            path: ContextSource
+          - name: DistributedOperations
+            path: DistributedOperations
+          - name: jsonldContext
+            path: jsonldContext
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -180,17 +210,15 @@ jobs:
           source .venv/bin/activate
           pip install -r requirements.txt
           
-          # Run tests against the TP/NGSI-LD folder
-          # Exclude 'iop' (requires 5 brokers)
-          # Exclude 'mqtt' (requires an MQTT broker like Mosquitto)
-          robot --exclude mqtt --exclude iop --outputdir ./results ./TP/NGSI-LD || true
+          # Run tests strictly against the matrix component path
+          robot --exclude mqtt --exclude iop --outputdir ./results ./TP/NGSI-LD/${{ matrix.path }} || true
 
       - name: Extract ETSI Errors to Separated File
         if: always()
         run: |
           mkdir -p etsi-reports
           cp -r ngsi-ld-test-suite/results/* etsi-reports/ || true
-          echo "=== ETSI Failed Tests Summary ===" > etsi-reports/etsi-errors-summary.txt
+          echo "=== ETSI Failed Tests Summary (${{ matrix.name }}) ===" > etsi-reports/etsi-errors-summary.txt
           # Grab FAIL statuses from the output XML, strip HTML tags for readability
           grep "FAIL" etsi-reports/output.xml | sed -e 's/<[^>]*>//g' >> etsi-reports/etsi-errors-summary.txt || echo "No FAIL flags found in XML." >> etsi-reports/etsi-errors-summary.txt
 
@@ -202,15 +230,98 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ETSI-Test-Reports
+          name: ETSI-Reports-${{ matrix.name }}
           path: etsi-reports/
+          
+  # ==========================================
+  # 2C. TEST IOP JOB: Runs ETSI Interoperability Tests
+  # ==========================================
+  test-iop:
+    name: Run IOP Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scorpio-image-artifact
+
+      - name: Load Pre-built Docker Image
+        run: |
+          docker load -i scorpio-image.tar
+          docker tag scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} scorpiobroker/${{ env.IMAGE_NAME }}:java-latest
+
+      - name: Start IOP Environment (5 Brokers)
+        run: |
+          docker compose -f ./compose-files/docker-compose-iop-test.yml up > dockerout.log 2>&1 &
+          echo "Waiting 120 seconds for all 5 Scorpio brokers to initialize..."
+          sleep 120
+
+      - name: Get ETSI Testsuite
+        run: git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+
+      - name: Run ETSI IOP Tests
+        run: |
+          cd ngsi-ld-test-suite
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq python3-virtualenv
+          virtualenv .venv 
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          
+          # Pass the 5 different broker URLs to Robot framework
+          robot \
+            --variable b1_url:http://localhost:9081/ngsi-ld/v1 \
+            --variable b2_url:http://localhost:9082/ngsi-ld/v1 \
+            --variable b3_url:http://localhost:9083/ngsi-ld/v1 \
+            --variable b4_url:http://localhost:9084/ngsi-ld/v1 \
+            --variable b5_url:http://localhost:9085/ngsi-ld/v1 \
+            --outputdir ./results-iop \
+            ./IOP_TP || true
+
+      - name: Stop IOP Environment
+        if: always()
+        run: docker compose -f ./compose-files/docker-compose-iop-test.yml down
+
+      - name: Upload IOP Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOP-Reports
+          path: ngsi-ld-test-suite/results-iop/
 
   # ==========================================
-  # 3. PUBLISH JOB: Pushes to GitHub Packages
+  # 3. COMBINE ARTIFACTS
+  # ==========================================
+  merge-test-reports:
+    name: Group All Artifacts Into One Folder
+    if: always()
+    needs: [test-api, test-etsi, test-iop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all fragmented test reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-Reports*'
+          path: combined-test-reports
+          merge-multiple: false # Keeps them neatly separated in subdirectories
+
+      - name: Upload Combined Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: All-Scorpio-Test-Reports
+          path: combined-test-reports/
+          retention-days: 14
+
+  # ==========================================
+  # 4. PUBLISH JOB: Pushes to GitHub Packages
   # ==========================================
   publish:
     name: Push Image to GitHub Registry
-    needs: [test-api, test-etsi] # Enforces that BOTH tests must pass successfully
+    needs: [test-api, test-etsi, test-iop] # Enforces that ALL tests must pass successfully
     runs-on: ubuntu-latest
     steps:
       - name: Download Docker Image Artifact

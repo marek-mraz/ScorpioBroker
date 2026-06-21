@@ -1,0 +1,82 @@
+version: '3'
+
+services:
+  # Broker 1
+  postgres1:
+    image: postgis/postgis
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+  scorpio1:
+    image: scorpiobroker/all-in-one-runner:java-latest
+    environment:
+      DBHOST: postgres1
+    ports:
+      - "9081:9090"
+    depends_on:
+      - postgres1
+
+  # Broker 2
+  postgres2:
+    image: postgis/postgis
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+  scorpio2:
+    image: scorpiobroker/all-in-one-runner:java-latest
+    environment:
+      DBHOST: postgres2
+    ports:
+      - "9082:9090"
+    depends_on:
+      - postgres2
+
+  # Broker 3
+  postgres3:
+    image: postgis/postgis
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+  scorpio3:
+    image: scorpiobroker/all-in-one-runner:java-latest
+    environment:
+      DBHOST: postgres3
+    ports:
+      - "9083:9090"
+    depends_on:
+      - postgres3
+
+  # Broker 4
+  postgres4:
+    image: postgis/postgis
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+  scorpio4:
+    image: scorpiobroker/all-in-one-runner:java-latest
+    environment:
+      DBHOST: postgres4
+    ports:
+      - "9084:9090"
+    depends_on:
+      - postgres4
+
+  # Broker 5
+  postgres5:
+    image: postgis/postgis
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+  scorpio5:
+    image: scorpiobroker/all-in-one-runner:java-latest
+    environment:
+      DBHOST: postgres5
+    ports:
+      - "9085:9090"
+    depends_on:
+      - postgres5
