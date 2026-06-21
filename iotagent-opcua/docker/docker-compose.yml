@@ -93,7 +93,7 @@ services:
       driver: none
       
   kafka:
-    image: bitnami/kafka
+    image: apache/kafka
     networks:
       - default
     ports:

@@ -32,7 +32,7 @@ services:
     ports:
       - "2181"
   kafka:
-    image: bitnami/kafka
+    image: apache/kafka
     ports:
       - "9092"
     environment:

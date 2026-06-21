@@ -620,9 +620,9 @@ Once helm is installed use the following command to get the running Kafka cluste
 ::
 
  helm repo add bitnami https://charts.bitnami.com/bitnami
- helm install kafka bitnami/kafka
+ helm install kafka apache/kafka
 
-For more information follow the link (https://artifacthub.io/packages/helm/bitnami/kafka)
+For more information follow the link (https://artifacthub.io/packages/helm/apache/kafka)
 
 Scorpio Broker
 ****************

@@ -272,6 +272,8 @@ jobs:
           pip install -r requirements.txt
           
           robot \
+            --variable url:http://localhost:9081/ngsi-ld/v1 \
+            --variable temporal_api_url:http://localhost:9081/ngsi-ld/v1 \
             --variable b1_url:http://localhost:9081/ngsi-ld/v1 \
             --variable b2_url:http://localhost:9082/ngsi-ld/v1 \
             --variable b3_url:http://localhost:9083/ngsi-ld/v1 \

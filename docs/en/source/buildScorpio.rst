@@ -71,7 +71,7 @@ in the docker-compose file to respective container config. E.g. to make Kafka qu
 ::
 
 	kafka:
-	  image: bitnami/kafka
+	  image: apache/kafka
 	  hostname: kafka
 	  ports:
 	    - "9092"
@@ -368,7 +368,7 @@ docker-compose files to match your docker host IP. You can use
 mode.
 
 For further details please refer to
-https://hub.docker.com/r/bitnami/kafka
+https://hub.docker.com/r/apache/kafka
 
 Running docker build outside of Maven
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -28,7 +28,7 @@ services:
     ports:
       - "2181"
   kafka:
-    image: bitnami/kafka
+    image: apache/kafka
     hostname: kafka
     container_name: kafka
     networks:

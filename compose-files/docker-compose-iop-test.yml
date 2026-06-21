@@ -1,82 +1,167 @@
-version: '3'
+version: '3.8'
 
 services:
-  # Broker 1
+  # ==========================================
+  # BROKER 1
+  # ==========================================
   postgres1:
-    image: postgis/postgis
+    image: postgis/postgis:14-3.3
     environment:
       POSTGRES_USER: ngb
       POSTGRES_PASSWORD: ngb
       POSTGRES_DB: ngb
+
+  kafka1:
+    image: apache/kafka:latest
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka1:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka1:9092
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xmx256m -Xms256m
+
   scorpio1:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres1
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:9092
     ports:
       - "9081:9090"
     depends_on:
       - postgres1
+      - kafka1
 
-  # Broker 2
+  # ==========================================
+  # BROKER 2
+  # ==========================================
   postgres2:
-    image: postgis/postgis
+    image: postgis/postgis:14-3.3
     environment:
       POSTGRES_USER: ngb
       POSTGRES_PASSWORD: ngb
       POSTGRES_DB: ngb
+
+  kafka2:
+    image: apache/kafka:latest
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka2:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka2:9092
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xmx256m -Xms256m
+
   scorpio2:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres2
+      KAFKA_BOOTSTRAP_SERVERS: kafka2:9092
     ports:
       - "9082:9090"
     depends_on:
       - postgres2
+      - kafka2
 
-  # Broker 3
+  # ==========================================
+  # BROKER 3
+  # ==========================================
   postgres3:
-    image: postgis/postgis
+    image: postgis/postgis:14-3.3
     environment:
       POSTGRES_USER: ngb
       POSTGRES_PASSWORD: ngb
       POSTGRES_DB: ngb
+
+  kafka3:
+    image: apache/kafka:latest
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka3:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka3:9092
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xmx256m -Xms256m
+
   scorpio3:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres3
+      KAFKA_BOOTSTRAP_SERVERS: kafka3:9092
     ports:
       - "9083:9090"
     depends_on:
       - postgres3
+      - kafka3
 
-  # Broker 4
+  # ==========================================
+  # BROKER 4
+  # ==========================================
   postgres4:
-    image: postgis/postgis
+    image: postgis/postgis:14-3.3
     environment:
       POSTGRES_USER: ngb
       POSTGRES_PASSWORD: ngb
       POSTGRES_DB: ngb
+
+  kafka4:
+    image: apache/kafka:latest
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka4:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka4:9092
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xmx256m -Xms256m
+
   scorpio4:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres4
+      KAFKA_BOOTSTRAP_SERVERS: kafka4:9092
     ports:
       - "9084:9090"
     depends_on:
       - postgres4
+      - kafka4
 
-  # Broker 5
+  # ==========================================
+  # BROKER 5
+  # ==========================================
   postgres5:
-    image: postgis/postgis
+    image: postgis/postgis:14-3.3
     environment:
       POSTGRES_USER: ngb
       POSTGRES_PASSWORD: ngb
       POSTGRES_DB: ngb
+
+  kafka5:
+    image: apache/kafka:latest
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka5:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka5:9092
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xmx256m -Xms256m
+
   scorpio5:
     image: scorpiobroker/all-in-one-runner:java-latest
     environment:
       DBHOST: postgres5
+      KAFKA_BOOTSTRAP_SERVERS: kafka5:9092
     ports:
       - "9085:9090"
     depends_on:
       - postgres5
+      - kafka5
