@@ -85,9 +85,10 @@ public class RegistrySubscriptionSyncSQS implements SyncService {
 			internal = "1";
 		}
 		return connectionManager.executeQuery(null,
-				"NOTIFY regsubscriptionchannel, '" + request.getId() + seperator + request.getTenant()
-						+ seperator + request.getRequestType() + seperator + SYNC_ID + seperator + internal + "'",
-				null, false).onItem().transformToUni(r -> Uni.createFrom().voidItem());
+				"SELECT pg_notify('regsubscriptionchannel', $1)",
+				Tuple.of(request.getId() + seperator + request.getTenant()
+						+ seperator + request.getRequestType() + seperator + SYNC_ID + seperator + internal), false)
+				.onItem().transformToUni(r -> Uni.createFrom().voidItem());
 
 	}
 

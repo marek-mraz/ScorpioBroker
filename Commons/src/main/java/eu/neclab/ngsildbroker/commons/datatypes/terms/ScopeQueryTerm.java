@@ -123,7 +123,7 @@ public class ScopeQueryTerm implements Serializable {
 					break;
 				default:
 					result.append("\\/");
-					result.append(entry);
+					result.append(entry.replace("'", "''"));
 					break;
 				}
 			}
@@ -153,7 +153,7 @@ public class ScopeQueryTerm implements Serializable {
 				break;
 			default:
 				result.append("\\/");
-				result.append(entry);
+				result.append(entry.replace("'", "''"));
 				break;
 			}
 		}
@@ -182,7 +182,7 @@ public class ScopeQueryTerm implements Serializable {
 					break;
 				default:
 					result.append("\\/");
-					result.append(entry);
+					result.append(entry.replace("'", "''"));
 					break;
 				}
 			}

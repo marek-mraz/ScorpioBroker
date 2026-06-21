@@ -383,11 +383,11 @@ public final class HttpUtils {
 					.entity(new ResponseException(ErrorType.InvalidRequest,
 							"There is an error in the provided json document").getJson());
 		} else if (e instanceof PgException pgE) {
-			logger.debug("Exception :: ", e);
+			logger.error("Database Exception :: ", e);
 			myBuilder = RestResponseBuilderImpl.create(HttpStatus.SC_BAD_REQUEST)
 					.header(HttpHeaders.CONTENT_TYPE, AppConstants.NGB_APPLICATION_JSON)
 					.entity(new ResponseException(ErrorType.InvalidRequest,
-							pgE.getErrorMessage()).getJson());
+							"Invalid request data").getJson());
 		} else {
 			logger.error("Exception :: ", e);
 			myBuilder = RestResponseBuilderImpl.create(HttpStatus.SC_INTERNAL_SERVER_ERROR)

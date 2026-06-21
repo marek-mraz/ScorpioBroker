@@ -191,8 +191,10 @@ public class GeoQueryTerm implements Serializable {
 
 	public Tuple2<StringBuilder, Integer> getGeoSQLQuery(Tuple tuple, int dollar, String fieldName)
 			throws ResponseException {
-		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + geometry + "\", \"coordinates\": "
-				+ coordinates + " }'), 4326)";
+		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";
+		String safeCoordinates = coordinates != null ? coordinates.replace("'", "''") : "";
+		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + safeGeometry + "\", \"coordinates\": "
+				+ safeCoordinates + " }'), 4326)";
 		String sqlPostgisFunction = DBConstants.NGSILD_TO_POSTGIS_GEO_OPERATORS_MAPPING.get(georel);
 		StringBuilder result = new StringBuilder();
 		switch (georel) {
@@ -250,10 +252,12 @@ public class GeoQueryTerm implements Serializable {
 			followUpDBColumn = "location";
 		}
 
-		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + geometry + "\", \"coordinates\": "
-				+ coordinates + " }'), 4326)";
-		String followReferenceValue = "ST_SetSRID(ST_GeomFromGeoJSON(''{\"type\": \"" + geometry
-				+ "\", \"coordinates\": " + coordinates + " }''), 4326)";
+		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";
+		String safeCoordinates = coordinates != null ? coordinates.replace("'", "''") : "";
+		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + safeGeometry + "\", \"coordinates\": "
+				+ safeCoordinates + " }'), 4326)";
+		String followReferenceValue = "ST_SetSRID(ST_GeomFromGeoJSON(''{\"type\": \"" + safeGeometry
+				+ "\", \"coordinates\": " + safeCoordinates + " }''), 4326)";
 		String sqlPostgisFunction = DBConstants.NGSILD_TO_POSTGIS_GEO_OPERATORS_MAPPING.get(georel);
 		switch (georel) {
 			case NGSIConstants.GEO_REL_NEAR:
@@ -335,8 +339,10 @@ public class GeoQueryTerm implements Serializable {
 			tuple.addString(inlineSql.toString());
 		}
 
-		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + geometry + "\", \"coordinates\": "
-				+ coordinates + " }'), 4326)";
+		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";
+		String safeCoordinates = coordinates != null ? coordinates.replace("'", "''") : "";
+		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + safeGeometry + "\", \"coordinates\": "
+				+ safeCoordinates + " }'), 4326)";
 		String sqlPostgisFunction = DBConstants.NGSILD_TO_POSTGIS_GEO_OPERATORS_MAPPING.get(georel);
 		switch (georel) {
 			case NGSIConstants.GEO_REL_NEAR:
@@ -388,8 +394,10 @@ public class GeoQueryTerm implements Serializable {
 			dbColumn = "location";
 		}
 
-		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + geometry + "\", \"coordinates\": "
-				+ coordinates + " }'), 4326)";
+		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";
+		String safeCoordinates = coordinates != null ? coordinates.replace("'", "''") : "";
+		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + safeGeometry + "\", \"coordinates\": "
+				+ safeCoordinates + " }'), 4326)";
 		String sqlPostgisFunction = DBConstants.NGSILD_TO_POSTGIS_GEO_OPERATORS_MAPPING.get(georel);
 		switch (georel) {
 			case NGSIConstants.GEO_REL_NEAR:
@@ -439,8 +447,10 @@ public class GeoQueryTerm implements Serializable {
 		dollar++;
 		query.append(" AND ");
 
-		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + geometry + "\", \"coordinates\": "
-				+ coordinates + " }'), 4326)";
+		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";
+		String safeCoordinates = coordinates != null ? coordinates.replace("'", "''") : "";
+		String referenceValue = "ST_SetSRID(ST_GeomFromGeoJSON('{\"type\": \"" + safeGeometry + "\", \"coordinates\": "
+				+ safeCoordinates + " }'), 4326)";
 		String sqlPostgisFunction = DBConstants.NGSILD_TO_POSTGIS_GEO_OPERATORS_MAPPING.get(georel);
 		switch (georel) {
 			case NGSIConstants.GEO_REL_NEAR:

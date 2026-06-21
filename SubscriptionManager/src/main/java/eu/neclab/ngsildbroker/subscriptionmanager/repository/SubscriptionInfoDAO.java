@@ -263,9 +263,8 @@ public class SubscriptionInfoDAO {
 									String tenantLabel = tenantInfo.getItem2();
 									String tenantDisplay = tenantLabel != null ? tenantLabel : "default/internal";
 									logger.info("Loading subscriptions for tenant '" + tenantDisplay + "'");
-									return connectionManager.executeQuery(tenantLabel, "SELECT '" + tenantId
-											+ "', subscription, context as contextId FROM subscriptions",
-											null, false)
+									return connectionManager.executeQuery(tenantLabel, "SELECT $1, subscription, context as contextId FROM subscriptions",
+											Tuple.of(tenantId), false)
 											.onItem().transform(rowSet -> {
 												List<Tuple4<String, Map<String, Object>, String, Map<String, Object>>> batch = new ArrayList<>();
 												rowSet.forEach(row -> {

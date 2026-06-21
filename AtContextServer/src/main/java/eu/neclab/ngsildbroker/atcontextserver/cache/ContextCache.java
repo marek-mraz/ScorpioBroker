@@ -73,6 +73,19 @@ public class ContextCache {
 
 	public Uni<Map<String, Object>> load(String uri, boolean reload) {
 		logger.debug("loading uri " + uri);
+		try {
+			java.net.URI parsedUri = new java.net.URI(uri);
+			String scheme = parsedUri.getScheme();
+			if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Invalid scheme in context URI"));
+			}
+			java.net.InetAddress addr = java.net.InetAddress.getByName(parsedUri.getHost());
+			if (addr.isLoopbackAddress() || addr.isAnyLocalAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress() || addr.getHostAddress().startsWith("10.") || addr.getHostAddress().startsWith("192.168.") || addr.getHostAddress().matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..+")) {
+				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Local/Private context URIs are not allowed"));
+			}
+		} catch (Exception e) {
+			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Invalid context URI"));
+		}
 		CaffeineCache caffeinCache = cache.as(CaffeineCache.class);
 		CompletableFuture<Object> valueFuture = caffeinCache.getIfPresent(uri);
 		if (valueFuture != null && !reload) {

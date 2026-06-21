@@ -160,12 +160,10 @@ public class RegistrySubscriptionInfoDAO {
 					List<Uni<RowSet<Row>>> unis = Lists.newArrayList();
 					rows.forEach(row -> {
 						unis.add(
-								connectionManager.executeQuery(row.getString(0), "SELECT '" + row.getString(0)
-										+ "', subscription, context FROM registry_subscriptions", null, false));
+								connectionManager.executeQuery(row.getString(0), "SELECT $1, subscription, context FROM registry_subscriptions", Tuple.of(row.getString(0)), false));
 					});
 					unis.add(
-							connectionManager.executeQuery(null, "SELECT '" + AppConstants.INTERNAL_NULL_KEY
-									+ "', subscription, context FROM registry_subscriptions", null, false));
+							connectionManager.executeQuery(null, "SELECT $1, subscription, context FROM registry_subscriptions", Tuple.of(AppConstants.INTERNAL_NULL_KEY), false));
 
 					return Uni.combine().all().unis(unis).with(list -> {
 						List<Tuple3<String, Map<String, Object>, Map<String, Object>>> result = Lists.newArrayList();

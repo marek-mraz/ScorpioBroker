@@ -430,8 +430,9 @@ public class OrderByTerm {
             sql.append("ORDER_VALUE");
             sql.append(i);
             if (term.collation != null) {
+                String safeCollation = term.collation.replaceAll("[^a-zA-Z0-9_\\-]", "");
                 sql.append(" COLLATE \"");
-                sql.append(term.collation);
+                sql.append(safeCollation);
                 sql.append('"');
             }
             if (term.orderDirection != null) {

@@ -94,8 +94,8 @@ public class SubscriptionSyncSQS implements SyncService {
 		logger.debug("sending notify: ");
 
 		return connectionManager
-				.executeQuery(null, "NOTIFY subscriptionchannel, '" + request.getId() + seperator + request.getTenant()
-						+ seperator + request.getRequestType() + seperator + SYNC_ID + "'", null, false)
+				.executeQuery(null, "SELECT pg_notify('subscriptionchannel', $1)", Tuple.of(request.getId() + seperator + request.getTenant()
+						+ seperator + request.getRequestType() + seperator + SYNC_ID), false)
 				.onItem().transformToUni(r -> Uni.createFrom().voidItem());
 
 	}
