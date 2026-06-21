@@ -4,9 +4,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "658bd9ad69858bd83cf16835165d6fca971d83b1",
+      "app.quarkus.io/commit-id" : "f1c6d1311d29fd7aefdcb8a29e46f2bc6d028463",
       "app.quarkus.io/vcs-uri" : "https://github.com/marek-mraz/ScorpioBroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-06-21 - 17:53:57 +0000"
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 19:35:57 +0000"
     },
     "labels" : {
       "app.kubernetes.io/name" : "entity-manager",
@@ -56,9 +56,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "658bd9ad69858bd83cf16835165d6fca971d83b1",
+      "app.quarkus.io/commit-id" : "f1c6d1311d29fd7aefdcb8a29e46f2bc6d028463",
       "app.quarkus.io/vcs-uri" : "https://github.com/marek-mraz/ScorpioBroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-06-21 - 17:53:57 +0000",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 19:35:57 +0000",
       "prometheus.io/scrape" : "true",
       "prometheus.io/path" : "/q/metrics",
       "prometheus.io/port" : "10090",
@@ -90,9 +90,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "658bd9ad69858bd83cf16835165d6fca971d83b1",
+      "app.quarkus.io/commit-id" : "f1c6d1311d29fd7aefdcb8a29e46f2bc6d028463",
       "app.quarkus.io/vcs-uri" : "https://github.com/marek-mraz/ScorpioBroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-06-21 - 17:53:57 +0000",
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 19:35:57 +0000",
       "prometheus.io/scrape" : "true",
       "prometheus.io/path" : "/q/metrics",
       "prometheus.io/port" : "10090",
@@ -117,9 +117,9 @@
       "metadata" : {
         "annotations" : {
           "app.quarkus.io/quarkus-version" : "3.28.4",
-          "app.quarkus.io/commit-id" : "658bd9ad69858bd83cf16835165d6fca971d83b1",
+          "app.quarkus.io/commit-id" : "f1c6d1311d29fd7aefdcb8a29e46f2bc6d028463",
           "app.quarkus.io/vcs-uri" : "https://github.com/marek-mraz/ScorpioBroker.git",
-          "app.quarkus.io/build-timestamp" : "2026-06-21 - 17:53:57 +0000",
+          "app.quarkus.io/build-timestamp" : "2026-06-21 - 19:35:57 +0000",
           "prometheus.io/scrape" : "true",
           "prometheus.io/path" : "/q/metrics",
           "prometheus.io/port" : "10090",
@@ -141,6 +141,21 @@
               }
             }
           }, {
+            "name" : "dbport",
+            "value" : "5432"
+          }, {
+            "name" : "dbhost",
+            "value" : "localhost"
+          }, {
+            "name" : "dbname",
+            "value" : "ngb"
+          }, {
+            "name" : "busport",
+            "value" : "9092"
+          }, {
+            "name" : "dbpass",
+            "value" : "ngb"
+          }, {
             "name" : "bushost",
             "value" : "localhost"
           }, {
@@ -149,21 +164,6 @@
           }, {
             "name" : "gateway",
             "value" : "http://localhost:9090"
-          }, {
-            "name" : "dbname",
-            "value" : "ngb"
-          }, {
-            "name" : "dbhost",
-            "value" : "localhost"
-          }, {
-            "name" : "dbpass",
-            "value" : "ngb"
-          }, {
-            "name" : "busport",
-            "value" : "9092"
-          }, {
-            "name" : "dbport",
-            "value" : "5432"
           }, {
             "name" : "QUARKUS_FLYWAY_ACTIVE",
             "value" : "false"
@@ -256,9 +256,9 @@
   "metadata" : {
     "annotations" : {
       "app.quarkus.io/quarkus-version" : "3.28.4",
-      "app.quarkus.io/commit-id" : "658bd9ad69858bd83cf16835165d6fca971d83b1",
+      "app.quarkus.io/commit-id" : "f1c6d1311d29fd7aefdcb8a29e46f2bc6d028463",
       "app.quarkus.io/vcs-uri" : "https://github.com/marek-mraz/ScorpioBroker.git",
-      "app.quarkus.io/build-timestamp" : "2026-06-21 - 17:53:57 +0000"
+      "app.quarkus.io/build-timestamp" : "2026-06-21 - 19:35:57 +0000"
     },
     "labels" : {
       "app.kubernetes.io/name" : "entity-manager",

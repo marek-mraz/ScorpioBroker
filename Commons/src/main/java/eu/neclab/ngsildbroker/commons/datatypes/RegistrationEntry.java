@@ -163,8 +163,22 @@ public class RegistrationEntry {
 		List<RegistrationEntry> result = Lists.newArrayList();
 		boolean canDoSingleOp = false;
 		boolean canDoBatchOp = false;
-		String host = (String) ((List<Map<String, Object>>) payload.get(NGSIConstants.NGSI_LD_ENDPOINT)).get(0)
+		String rawHost = (String) ((List<Map<String, Object>>) payload.get(NGSIConstants.NGSI_LD_ENDPOINT)).get(0)
 				.get(NGSIConstants.JSON_LD_VALUE);
+		// Normalize the registration endpoint to a base URL. Every remote-call site appends a
+		// full "/ngsi-ld/v1/..." path constant to host(), so a registered endpoint that already
+		// ends in /ngsi-ld/v1 (as the ETSI IOP suite registers) would produce a doubled path
+		// (.../ngsi-ld/v1/ngsi-ld/v1/entities -> 405) and break all federation. Strip it once here.
+		if (rawHost != null) {
+			if (rawHost.endsWith("/")) {
+				rawHost = rawHost.substring(0, rawHost.length() - 1);
+			}
+			if (rawHost.endsWith("/ngsi-ld/v1")) {
+				rawHost = rawHost.substring(0, rawHost.length() - "/ngsi-ld/v1".length());
+			}
+		}
+		// effectively final for the lambda capture below
+		String host = rawHost;
 		// tenant is expanded as an @id (NGSI-LD core context defines it as @type: @id),
 		// so read JSON_LD_ID here (see HttpUtils#getHeadersForRemoteCall / CSourceService).
 		// Single assignment keeps `tenant` effectively final for the lambda capture below.
