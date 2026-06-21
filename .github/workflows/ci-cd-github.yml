@@ -20,7 +20,7 @@ env:
 
 jobs:
   # ==========================================
-  # 1. BUILD JOB: Compiles code & builds image
+  # 1. BUILD JOB: Compiles code & builds image ONCE
   # ==========================================
   build:
     name: Build Java & Docker Image
@@ -44,7 +44,7 @@ jobs:
             -Ddocker-tag=${{ github.sha }}
 
       - name: Save Docker Image to Tarball
-        # Saves the local image so we can pass it to the testing and publishing jobs
+        # Saves the local image so we can pass it to all parallel testing jobs
         run: |
           docker save scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} -o scorpio-image.tar
 
@@ -53,7 +53,7 @@ jobs:
         with:
           name: scorpio-image-artifact
           path: scorpio-image.tar
-          retention-days: 3
+          retention-days: 1
 
   # ==========================================
   # 2A. TEST API JOB: Runs Postman/Newman Tests
@@ -74,7 +74,6 @@ jobs:
       - name: Load Pre-built Docker Image
         run: |
           docker load -i scorpio-image.tar
-          # Retag for docker-compose compatibility
           docker tag scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} scorpiobroker/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-latest
 
       - name: Build Test dependencies
@@ -91,13 +90,12 @@ jobs:
         run: |
           npm install -g newman
           mkdir -p test-reports
-          # Run tests and output console directly to a log file
           newman run api-test.json -e api-test-aaio-environment.json \
             --reporters cli,json,html \
             --reporter-json-export test-reports/newman-report.json \
             --reporter-html-export test-reports/newman-report.html | tee newman-console.log
 
-      - name: Extract API Errors to Separated File
+      - name: Extract API Errors
         if: always()
         run: |
           echo "=== API Test Errors ===" > test-reports/api-errors-summary.txt
@@ -108,18 +106,19 @@ jobs:
         if: always()
         run: docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml down
 
-      - name: Upload API Test Results & Errors
+      - name: Upload API Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: API-Reports
           path: test-reports/
+          retention-days: 1
 
   # ==========================================
-  # 2B. TEST ETSI JOB: Runs Robot Framework (Matrix Parallel)
+  # 2B. TEST ETSI JOB: Runs in PARALLEL via Matrix
   # ==========================================
   test-etsi:
-    name: Run ETSI Tests (${{ matrix.name }})
+    name: ETSI - ${{ matrix.name }}
     needs: build
     runs-on: ubuntu-latest
     strategy:
@@ -179,12 +178,15 @@ jobs:
       - name: Get ETSI Testsuite
         run: git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
 
+      - name: Check out specific testsuite branch for jsonldContext
+        if: matrix.name == 'jsonldContext'
+        run: |
+          cd ngsi-ld-test-suite
+          git checkout fix/jsonldContext || true
+
       - name: Config ETSI Testsuite
         run: |
           cd ngsi-ld-test-suite/resources/
-          
-          # Overwrite the top of variables.py to use host.docker.internal 
-          # so Scorpio inside Docker knows how to reach the GitHub runner webhook
           cat <<EOF > variables.py.new
           url = 'http://localhost:9090/ngsi-ld/v1'
           temporal_api_url = 'http://localhost:9090/ngsi-ld/v1'
@@ -196,8 +198,6 @@ jobs:
           context_server_host = 'host.docker.internal'
           context_server_port = 8087
           EOF
-          
-          # Append the rest of the default ETSI variables.py (skipping the original first 10 lines)
           tail -n +11 variables.py >> variables.py.new
           mv variables.py.new variables.py
 
@@ -210,28 +210,27 @@ jobs:
           source .venv/bin/activate
           pip install -r requirements.txt
           
-          # Run tests strictly against the matrix component path
           robot --exclude mqtt --exclude iop --outputdir ./results ./TP/NGSI-LD/${{ matrix.path }} || true
 
-      - name: Extract ETSI Errors to Separated File
+      - name: Extract ETSI Errors
         if: always()
         run: |
           mkdir -p etsi-reports
           cp -r ngsi-ld-test-suite/results/* etsi-reports/ || true
           echo "=== ETSI Failed Tests Summary (${{ matrix.name }}) ===" > etsi-reports/etsi-errors-summary.txt
-          # Grab FAIL statuses from the output XML, strip HTML tags for readability
           grep "FAIL" etsi-reports/output.xml | sed -e 's/<[^>]*>//g' >> etsi-reports/etsi-errors-summary.txt || echo "No FAIL flags found in XML." >> etsi-reports/etsi-errors-summary.txt
 
       - name: Stop Environment
         if: always()
         run: docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml down
 
-      - name: Upload ETSI Test Results & Errors
+      - name: Upload ETSI Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ETSI-Reports-${{ matrix.name }}
           path: etsi-reports/
+          retention-days: 1
           
   # ==========================================
   # 2C. TEST IOP JOB: Runs ETSI Interoperability Tests
@@ -272,7 +271,6 @@ jobs:
           source .venv/bin/activate
           pip install -r requirements.txt
           
-          # Pass the 5 different broker URLs to Robot framework
           robot \
             --variable b1_url:http://localhost:9081/ngsi-ld/v1 \
             --variable b2_url:http://localhost:9082/ngsi-ld/v1 \
@@ -292,27 +290,28 @@ jobs:
         with:
           name: IOP-Reports
           path: ngsi-ld-test-suite/results-iop/
+          retention-days: 1
 
   # ==========================================
-  # 3. COMBINE ARTIFACTS
+  # 3. MERGE REPORTS: Group everything into 1 ZIP
   # ==========================================
   merge-test-reports:
-    name: Group All Artifacts Into One Folder
-    if: always()
+    name: Group All Test Artifacts
     needs: [test-api, test-etsi, test-iop]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Download all fragmented test reports
+      - name: Download all separated test reports
         uses: actions/download-artifact@v4
         with:
           pattern: '*-Reports*'
           path: combined-test-reports
-          merge-multiple: false # Keeps them neatly separated in subdirectories
+          merge-multiple: false # Keeps the folders separated inside the master directory
 
-      - name: Upload Combined Test Reports
+      - name: Upload Master Test Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: All-Scorpio-Test-Reports
+          name: Scorpio-Master-Test-Reports
           path: combined-test-reports/
           retention-days: 14
 
@@ -337,16 +336,13 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          # Automatically provided by GitHub - no configuration needed!
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag and Push Image to GHCR
         run: |
-          # GHCR requires the namespace (owner name) to be entirely lowercase
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           LOCAL_IMAGE="scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           
-          # Target GHCR paths
           GHCR_IMAGE_LATEST="${{ env.REGISTRY }}/$OWNER_LOWERCASE/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}"
           GHCR_IMAGE_SHA="${{ env.REGISTRY }}/$OWNER_LOWERCASE/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-${{ github.sha }}"
 
