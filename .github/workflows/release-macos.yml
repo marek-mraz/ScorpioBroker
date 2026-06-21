@@ -1,8 +1,8 @@
 name: Release macos version
 #on: [push,pull_request]
-on: 
-  push:
-    branches: "quarkus-release/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-macos-kafka:
     runs-on: macos-13

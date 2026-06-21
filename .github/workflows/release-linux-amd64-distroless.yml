@@ -1,7 +1,7 @@
 name: Release linux-amd64-distroless version
-on: 
-  push:
-    branches: "quarkus-release/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-linux-amd64-distroless-kafka:
     runs-on: ubuntu-latest

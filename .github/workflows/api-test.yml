@@ -1,5 +1,7 @@
 name: API test against Java version
-on: [push,pull_request]
+on:
+  workflow_dispatch:
+
 jobs:
   build-java-mqtt:
     runs-on: ubuntu-latest

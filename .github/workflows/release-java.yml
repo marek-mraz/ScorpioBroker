@@ -1,7 +1,7 @@
 name: Release Java version
-on: 
-  push:
-    branches: "quarkus-release/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-java-kafka:
     runs-on: ubuntu-latest

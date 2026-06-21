@@ -1,0 +1,226 @@
+name: CI/CD Pipeline - Build, Test, and Push to GHCR
+
+on:
+  push:
+    branches:
+      - main
+      - 'development-quarkus'
+  pull_request:
+  workflow_dispatch:
+
+# Add necessary permissions for GitHub Actions to push to the GitHub Container Registry
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: all-in-one-runner
+  PROFILE: kafka
+
+jobs:
+  # ==========================================
+  # 1. BUILD JOB: Compiles code & builds image
+  # ==========================================
+  build:
+    name: Build Java & Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Build Application and Docker Image
+        run: |
+          mvn clean package -DskipTests -P${{ env.PROFILE }} -D${{ env.PROFILE }} \
+            -Ddocker \
+            -Dquarkus.profile=${{ env.PROFILE }} \
+            -Ddocker-tag=${{ github.sha }}
+
+      - name: Save Docker Image to Tarball
+        # Saves the local image so we can pass it to the testing and publishing jobs
+        run: |
+          docker save scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} -o scorpio-image.tar
+
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorpio-image-artifact
+          path: scorpio-image.tar
+          retention-days: 3
+
+  # ==========================================
+  # 2A. TEST API JOB: Runs Postman/Newman Tests
+  # ==========================================
+  test-api:
+    name: Run API Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scorpio-image-artifact
+
+      - name: Load Pre-built Docker Image
+        run: |
+          docker load -i scorpio-image.tar
+          # Retag for docker-compose compatibility
+          docker tag scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} scorpiobroker/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-latest
+
+      - name: Build Test dependencies
+        run: |
+          cd testserver && docker build -t testserver .
+
+      - name: Start Environment (Docker Compose)
+        run: |
+          docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml up > dockerout.log 2>&1 &
+          echo "Waiting 120 seconds for Scorpio and Dependencies to initialize..."
+          sleep 120
+
+      - name: Run Newman API Tests
+        run: |
+          npm install -g newman
+          mkdir -p test-reports
+          # Run tests and output console directly to a log file
+          newman run api-test.json -e api-test-aaio-environment.json \
+            --reporters cli,json,html \
+            --reporter-json-export test-reports/newman-report.json \
+            --reporter-html-export test-reports/newman-report.html | tee newman-console.log
+
+      - name: Extract API Errors to Separated File
+        if: always()
+        run: |
+          echo "=== API Test Errors ===" > test-reports/api-errors-summary.txt
+          grep -A 5 -B 2 "AssertionError" newman-console.log >> test-reports/api-errors-summary.txt || echo "No explicit assertion errors found." >> test-reports/api-errors-summary.txt
+          grep "✗" newman-console.log >> test-reports/api-errors-summary.txt || true
+
+      - name: Stop Environment
+        if: always()
+        run: docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml down
+
+      - name: Upload API Test Results & Errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: API-Test-Reports
+          path: test-reports/
+
+  # ==========================================
+  # 2B. TEST ETSI JOB: Runs Robot Framework
+  # ==========================================
+  test-etsi:
+    name: Run ETSI Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scorpio-image-artifact
+
+      - name: Load Pre-built Docker Image
+        run: |
+          docker load -i scorpio-image.tar
+          docker tag scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }} scorpiobroker/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-latest
+
+      - name: Start Environment (Docker Compose)
+        run: |
+          docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml up > dockerout.log 2>&1 &
+          echo "Waiting 120 seconds for Scorpio to initialize..."
+          sleep 120
+
+      - name: Get ETSI Testsuite
+        run: git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+
+      - name: Config ETSI Testsuite
+        run: |
+          cd ngsi-ld-test-suite/resources/
+          echo -e "url = 'http://localhost:9090/ngsi-ld/v1'\ntemporal_api_url = 'http://localhost:9090/ngsi-ld/v1'\n$(tail -n +3 variables.py)" > variables.py
+          sed -i -e 's/0.0.0.0/localhost/g' variables.py
+          sed -i -e 's/127.0.0.1/localhost/g' variables.py
+
+      - name: Start ETSI Testsuite
+        run: |
+          cd ngsi-ld-test-suite
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq python3-virtualenv
+          virtualenv .venv 
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          # Run complete test suite (ignoring exit code so we can parse errors)
+          robot --outputdir ./results . || true
+
+      - name: Extract ETSI Errors to Separated File
+        if: always()
+        run: |
+          mkdir -p etsi-reports
+          cp -r ngsi-ld-test-suite/results/* etsi-reports/ || true
+          echo "=== ETSI Failed Tests Summary ===" > etsi-reports/etsi-errors-summary.txt
+          # Grab FAIL statuses from the output XML, strip HTML tags for readability
+          grep "FAIL" etsi-reports/output.xml | sed -e 's/<[^>]*>//g' >> etsi-reports/etsi-errors-summary.txt || echo "No FAIL flags found in XML." >> etsi-reports/etsi-errors-summary.txt
+
+      - name: Stop Environment
+        if: always()
+        run: docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml down
+
+      - name: Upload ETSI Test Results & Errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ETSI-Test-Reports
+          path: etsi-reports/
+
+  # ==========================================
+  # 3. PUBLISH JOB: Pushes to GitHub Packages
+  # ==========================================
+  publish:
+    name: Push Image to GitHub Registry
+    needs: [test-api, test-etsi] # Enforces that BOTH tests must pass successfully
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Docker Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scorpio-image-artifact
+
+      - name: Load Pre-built Docker Image
+        run: docker load -i scorpio-image.tar
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Automatically provided by GitHub - no configuration needed!
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and Push Image to GHCR
+        run: |
+          # GHCR requires the namespace (owner name) to be entirely lowercase
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          LOCAL_IMAGE="scorpiobroker/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          
+          # Target GHCR paths
+          GHCR_IMAGE_LATEST="${{ env.REGISTRY }}/$OWNER_LOWERCASE/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}"
+          GHCR_IMAGE_SHA="${{ env.REGISTRY }}/$OWNER_LOWERCASE/${{ env.IMAGE_NAME }}:java-${{ env.PROFILE }}-${{ github.sha }}"
+
+          echo "Pushing $GHCR_IMAGE_LATEST..."
+          docker tag $LOCAL_IMAGE $GHCR_IMAGE_LATEST
+          docker push $GHCR_IMAGE_LATEST
+
+          echo "Pushing $GHCR_IMAGE_SHA..."
+          docker tag $LOCAL_IMAGE $GHCR_IMAGE_SHA
+          docker push $GHCR_IMAGE_SHA

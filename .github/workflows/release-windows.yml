@@ -1,7 +1,7 @@
 name: Release windows version
-on: 
-  push:
-    branches: "quarkus-release/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-windows-kafka:
     runs-on: windows-latest

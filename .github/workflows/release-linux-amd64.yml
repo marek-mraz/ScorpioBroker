@@ -1,7 +1,7 @@
 name: Release linux-amd64 version
-on: 
-  push:
-    branches: "quarkus-release/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-linux-amd64-kafka:
     runs-on: ubuntu-latest

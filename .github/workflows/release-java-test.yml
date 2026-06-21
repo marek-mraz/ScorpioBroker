@@ -1,7 +1,7 @@
 name: Release Java version
-on: 
-  push:
-    branches: "release-test/**"
+on:
+  workflow_dispatch:
+
 jobs:
   build-java-aaio:
     runs-on: ubuntu-latest

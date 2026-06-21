@@ -1,9 +1,6 @@
 name: Release Java Multi-Arch to GitLab Registry
 
 on:
-  push:
-    tags:
-      - 'v*' # Trigger workflow on version tags (e.g., v6.0.1)
   workflow_dispatch: # Allow manual triggers from the GitHub UI
     inputs:
       version:

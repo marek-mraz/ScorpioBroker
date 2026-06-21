@@ -1,7 +1,6 @@
 name: PMD Static Code Analysis
 on:
-  pull_request:
-  push:
+  workflow_dispatch:
 
 jobs:
   build:
