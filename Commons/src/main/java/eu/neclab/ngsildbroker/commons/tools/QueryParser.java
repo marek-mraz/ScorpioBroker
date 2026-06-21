@@ -545,13 +545,25 @@ public class QueryParser {
 
 	public static void parseProjectionTerm(ProjectionTerm projectionTerm, String input, Context context)
 			throws ResponseException {
-		if (input == null) {
+		if (input == null || input.trim().isEmpty()) {
 			return;
 		}
+		input = URLDecoder.decode(input, StandardCharsets.UTF_8).trim();
+		if (input.isEmpty() || input.matches(".*[\\{\\}\\,\\|]{2,}.*") || input.startsWith(",") || input.startsWith("|") || input.startsWith("{") || input.startsWith("}") || input.matches(".*[^\\w\\d_\\-\\:\\.\\{\\}\\,\\|\\@].*")) {
+			throw new ResponseException(ErrorType.BadRequestData, "Invalid projection term");
+		}
+		int openBraces = 0;
+		for (int i = 0; i < input.length(); i++) {
+			char c = input.charAt(i);
+			if (c == '{') openBraces++;
+			else if (c == '}') openBraces--;
+			if (openBraces < 0) throw new ResponseException(ErrorType.BadRequestData, "Invalid projection term");
+		}
+		if (openBraces != 0) throw new ResponseException(ErrorType.BadRequestData, "Invalid projection term");
+
 		ProjectionTerm root = projectionTerm;
 		ProjectionTerm current = root;
 		StringBuilder attribName = new StringBuilder();
-		input = URLDecoder.decode(input, StandardCharsets.UTF_8).trim();
 		String expanded;
 		OfInt it = input.chars().iterator();
 		while (it.hasNext()) {
@@ -590,50 +602,37 @@ public class QueryParser {
 
 	public static OrderByTerm parseOrderBy(String input, String collation, String orderFrom, String orderGeometry,
 			Context context) throws ResponseException {
-		if (input == null) {
+		if (input == null || input.isBlank()) {
 			return null;
 		}
 		OrderByTerm result = new OrderByTerm();
 
 		input = URLDecoder.decode(input, StandardCharsets.UTF_8);
-		OfInt it = input.chars().iterator();
-
-		StringBuilder current = new StringBuilder();
-		String orderTerm = null;
-		boolean readingAttrib = true;
-		String orderDirection = null;
-		while (it.hasNext()) {
-			char b = (char) it.next().intValue();
-			switch (b) {
-				case ';':
-					orderTerm = current.toString();
-					current.setLength(0);
-					readingAttrib = false;
-					break;
-				case ',':
-					if (readingAttrib) {
-						orderTerm = current.toString();
-					} else {
-						orderDirection = current.toString();
-					}
-					result.addTerm(orderTerm, collation, orderFrom, orderDirection, orderGeometry);
-					orderTerm = null;
-					orderDirection = null;
-					readingAttrib = true;
-					current.setLength(0);
-					break;
-
-				default:
-					current.append(b);
-					break;
+		String[] terms = input.split(",");
+		for (String term : terms) {
+			term = term.trim();
+			String orderDirection = "ASC";
+			
+			if (term.startsWith("-")) {
+				orderDirection = "DESC";
+				term = term.substring(1);
+			} else if (term.startsWith("+")) {
+				orderDirection = "ASC";
+				term = term.substring(1);
 			}
+			
+			if (term.contains(";")) {
+				String[] parts = term.split(";");
+				term = parts[0];
+				if (parts.length > 1 && parts[1].toLowerCase().contains("desc")) {
+					orderDirection = "DESC";
+				} else {
+					orderDirection = "ASC";
+				}
+			}
+			
+			result.addTerm(term, collation, orderFrom, orderDirection, orderGeometry);
 		}
-		if (readingAttrib) {
-			orderTerm = current.toString();
-		} else {
-			orderDirection = current.toString();
-		}
-		result.addTerm(orderTerm, collation, orderFrom, orderDirection, orderGeometry);
 		return result;
 	}
 

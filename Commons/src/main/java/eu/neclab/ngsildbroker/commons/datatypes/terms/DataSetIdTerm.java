@@ -437,6 +437,7 @@ public class DataSetIdTerm implements Serializable {
 	@SuppressWarnings("unchecked")
 	public boolean calculateEntity(Map<String, Object> entity) {
 		Iterator<Entry<String, Object>> it = entity.entrySet().iterator();
+		boolean hasNonBaseProps = false;
 		while (it.hasNext()) {
 			Entry<String, Object> attrs = it.next();
 			String attrsName = attrs.getKey();
@@ -461,9 +462,11 @@ public class DataSetIdTerm implements Serializable {
 			}
 			if (attrsValueList.isEmpty()) {
 				it.remove();
+			} else {
+				hasNonBaseProps = true;
 			}
 		}
-		return !entity.isEmpty();
+		return hasNonBaseProps;
 	}
 
 	public int toTempSql(StringBuilder sql, Tuple tuple, int dollar) {

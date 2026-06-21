@@ -229,22 +229,13 @@ public class EntityController {// implements EntityHandlerInterface {
 			@PathParam("entityId") String entityId, @PathParam("attrId") String attrib, String bodyStr) {
 
 		Map<String, Object> body;
+		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrib) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrib)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Cannot update base property"), HttpUtils.getTenant(req)));
+		}
+
 		try {
 			HttpUtils.validateUri(entityId);
-			Map<String, Object> tmp = new JsonObject(bodyStr).getMap();
-			if (!tmp.containsKey(attrib)) {
-				Map<String, Object> tmp2;
-				if (tmp.containsKey(NGSIConstants.JSON_LD_CONTEXT)) {
-					tmp2 = new HashMap<String, Object>(2);
-					tmp2.put(NGSIConstants.JSON_LD_CONTEXT, tmp.remove(NGSIConstants.JSON_LD_CONTEXT));
-				} else {
-					tmp2 = new HashMap<String, Object>(1);
-				}
-				tmp2.put(attrib, tmp);
-				body = tmp2;
-			} else {
-				body = tmp;
-			}
+			body = new JsonObject(bodyStr).getMap();
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(req)));
 		}
@@ -269,8 +260,16 @@ public class EntityController {// implements EntityHandlerInterface {
 					String expAttrib = tuple.getItem1().expandIri(attrib, false, true, null, null);
 					logger.debug("update entry :: started");
 
+					Map<String, Object> expandedPayload = tuple.getItem2();
+					Map<String, Object> finalPayload = new HashMap<>();
+					if (!expandedPayload.containsKey(expAttrib)) {
+						finalPayload.put(expAttrib, List.of(expandedPayload));
+					} else {
+						finalPayload = expandedPayload;
+					}
+
 					return entityService.partialUpdateAttribute(HttpUtils.getTenant(req), entityId, expAttrib,
-							tuple.getItem2(), tuple.getItem1(), req.headers(), viaHeaders).onItem()
+							finalPayload, tuple.getItem1(), req.headers(), viaHeaders).onItem()
 							.transform(updateResult -> {
 								logger.trace("update entry :: completed");
 								return HttpUtils.generateUpdateResultResponse(updateResult);
@@ -297,6 +296,9 @@ public class EntityController {// implements EntityHandlerInterface {
 	public Uni<RestResponse<Object>> deleteAttribute(HttpServerRequest request, @PathParam("entityId") String entityId,
 			@PathParam("attrId") String attrId, @QueryParam("datasetId") String datasetId,
 			@QueryParam("deleteAll") String deleteAllS) {
+		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrId)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Cannot delete base property"), HttpUtils.getTenant(request)));
+		}
 		boolean deleteAll;
 		try {
 			deleteAll = HttpUtils.parseBoolean(deleteAllS);
@@ -483,8 +485,11 @@ public class EntityController {// implements EntityHandlerInterface {
 			@PathParam("entityId") String entityId, HttpServerRequest request, String bodyStr) {
 		logger.debug("replacing Attrs");
 
-		try {
+		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrId)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Cannot replace base property"), HttpUtils.getTenant(request)));
+		}
 
+		try {
 			HttpUtils.validateUri(entityId);
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
@@ -499,33 +504,26 @@ public class EntityController {// implements EntityHandlerInterface {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 		}
 		return JsonUtils.fromString(bodyStr).onItem().transformToUni(body -> {
-			Map<String, Object> finalBody;
+			Map<String, Object> bodyMap;
 			if (body instanceof Map m) {
-
-				if (!m.containsKey(attrId)) {
-					if (m.containsKey(NGSIConstants.JSON_LD_CONTEXT)) {
-						finalBody = new HashMap<>(2);
-						finalBody.put(NGSIConstants.JSON_LD_CONTEXT, m.remove(NGSIConstants.JSON_LD_CONTEXT));
-					} else {
-						finalBody = new HashMap<>(1);
-					}
-					finalBody.put(bodyStr, m);
-				} else {
-					finalBody = m;
-				}
-
-			} else if (body instanceof List l) {
-				finalBody = new HashMap<>(1);
-				finalBody.put(attrId, l);
+				bodyMap = m;
 			} else {
-				return Uni.createFrom().item(
-						HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData), tenant));
+				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData), tenant));
 			}
-			return HttpUtils.expandBody(request, finalBody, AppConstants.ENTITY_ATTRS_UPDATE_PAYLOAD, ldService)
+
+			return HttpUtils.expandBody(request, bodyMap, AppConstants.ENTITY_ATTRS_UPDATE_PAYLOAD, ldService)
 					.onItem()
 					.transformToUni(tuple -> {
 						String finalAttrId = tuple.getItem1().expandIri(attrId, false, true, null, null);
-						return entityService.replaceAttribute(tenant, tuple.getItem2(),
+						Map<String, Object> expandedPayload = tuple.getItem2();
+						Map<String, Object> finalPayload = new HashMap<>();
+						if (!expandedPayload.containsKey(finalAttrId)) {
+							finalPayload.put(finalAttrId, List.of(expandedPayload));
+						} else {
+							finalPayload = expandedPayload;
+						}
+
+						return entityService.replaceAttribute(tenant, finalPayload,
 								tuple.getItem1(), entityId, finalAttrId, request.headers(), viaHeaders).onItem()
 								.transform(opResult -> {
 									logger.debug("Done replacing attribute");

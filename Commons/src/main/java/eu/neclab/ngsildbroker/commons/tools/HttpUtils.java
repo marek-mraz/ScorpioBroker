@@ -1539,24 +1539,24 @@ public final class HttpUtils {
 		if ((format != null && !format.isEmpty()) || (options != null && !options.isEmpty())) {
 			finalOptions = new HashSet<>();
 			if (options != null) {
-				String[] tmp = StringUtils.split(options, ',');
-				for (int i = 0; i < tmp.length; i++) {
-					if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-						throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed option");
+					String[] tmp = StringUtils.split(options, ',');
+					for (int i = 0; i < tmp.length; i++) {
+						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
+							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed option");
+						}
+						finalOptions.add(tmp[i]);
 					}
-					finalOptions.add(tmp[i]);
 				}
-			}
 
-			if (format != null) {
-				String[] tmp = StringUtils.split(format, ',');
-				for (int i = 0; i < tmp.length; i++) {
-					if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-						throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed format");
+				if (format != null) {
+					String[] tmp = StringUtils.split(format, ',');
+					for (int i = 0; i < tmp.length; i++) {
+						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
+							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed format");
+						}
+						finalOptions.add(tmp[i]);
 					}
-					finalOptions.add(tmp[i]);
 				}
-			}
 		} else {
 			finalOptions = null;
 		}

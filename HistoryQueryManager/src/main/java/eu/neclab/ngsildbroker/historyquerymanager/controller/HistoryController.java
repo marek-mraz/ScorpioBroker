@@ -288,14 +288,10 @@ public class HistoryController {
 						if (aggrQuery != null || (finalOptions != null && !finalOptions
 								.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES))) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
-									geometryProperty,
-									finalOptions, null,
-									ldService, null, null, false, true,
-									-1);
+									geometryProperty, finalOptions, null, ldService, null, null, false, true, -1);
 						} else {
-
-							return HttpUtils.generateEntityResult(headerContext, context, acceptHeader, entity,
-									geometryProperty, finalOptions, null, ldService, null, null, true);
+							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
+									geometryProperty, finalOptions, null, ldService, null, null, true, true, AppConstants.ENTITY_RETRIEVED_PAYLOAD);
 						}
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));

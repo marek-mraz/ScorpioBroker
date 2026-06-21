@@ -558,43 +558,28 @@ public class QueryService implements CSourceHandler {
 					List<Map<String, String>> hasObject = (List<Map<String, String>>) attribMap
 							.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
 
-					if (localOnly) {
-						Map<String, Tuple2<Map<String, Object>, Set<String>>> ids2EntityAndHost = entityCache
-								.getAllIds2EntityAndHosts();
-						for (Map<String, String> idEntry : hasObject) {
-							String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
-							Tuple2<Map<String, Object>, Set<String>> entityAndHosts = ids2EntityAndHost.get(entityId);
-							if (entityAndHosts != null) {
-								Map<String, Object> ogEntity = entityAndHosts.getItem1();
-								if (ogEntity != null) {
-									toAdd.put((String) ogEntity.get(NGSIConstants.JSON_LD_ID), ogEntity);
-									if (currentJoinLevel + 1 <= joinLevel) {
-										flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel, toAdd,
-												localOnly);
+					Map<String, Tuple2<Map<String, Object>, Set<String>>> ids2EntityAndHost = entityCache.getAllIds2EntityAndHosts();
+					for (Map<String, String> idEntry : hasObject) {
+						String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
+						Tuple2<Map<String, Object>, Set<String>> entityAndHosts = ids2EntityAndHost.get(entityId);
+						if (entityAndHosts != null) {
+							Map<String, Object> ogEntity = entityAndHosts.getItem1();
+							if (ogEntity != null) {
+								boolean match = true;
+								if (!localOnly && attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
+									List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
+									Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
+									for (Object linkedTypeObj : linkedTypes) {
+										if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap && linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
+											tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
+										}
 									}
+									match = ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream().anyMatch(tmpTypeSet::contains);
 								}
-							}
-						}
-					} else if (attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
-						List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
-						Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
-						for (Object linkedTypeObj : linkedTypes) {
-							if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap
-									&& linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
-								tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
-							}
-						}
-						for (Map<String, String> idEntry : hasObject) {
-							String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
-							Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-							if (entityAndHosts != null) {
-								Map<String, Object> ogEntity = entityAndHosts.getItem1();
-								if (ogEntity != null && ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE))
-										.stream().anyMatch(tmpTypeSet::contains)) {
+								if (match) {
 									toAdd.put((String) ogEntity.get(NGSIConstants.JSON_LD_ID), ogEntity);
 									if (currentJoinLevel + 1 <= joinLevel) {
-										flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel, toAdd,
-												localOnly);
+										flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel, toAdd, localOnly);
 									}
 								}
 							}
@@ -607,59 +592,31 @@ public class QueryService implements CSourceHandler {
 					List<Map<String, List<Map<String, List<Map<String, String>>>>>> hasObjectList = (List<Map<String, List<Map<String, List<Map<String, String>>>>>>) attribMap
 							.get(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST);
 
-					if (localOnly) {
-
-						for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
-							List<Map<String, List<Map<String, String>>>> atList = atListEntry
-									.get(NGSIConstants.JSON_LD_LIST);
-							for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
-								List<Map<String, String>> objectList = hasObjectEntry
-										.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
-								for (Map<String, String> objectEntry : objectList) {
-									String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
-									Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-									if (entityAndHosts != null) {
-										Map<String, Object> ogEntity = entityAndHosts.getItem1();
-										if (ogEntity != null) {
-											toAdd.put((String) ogEntity.get(NGSIConstants.JSON_LD_ID), ogEntity);
-											if (currentJoinLevel + 1 <= joinLevel) {
-												flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel,
-														toAdd, localOnly);
+					for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
+						List<Map<String, List<Map<String, String>>>> atList = atListEntry.get(NGSIConstants.JSON_LD_LIST);
+						for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
+							List<Map<String, String>> objectList = hasObjectEntry.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
+							for (Map<String, String> objectEntry : objectList) {
+								String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
+								Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
+								if (entityAndHosts != null) {
+									Map<String, Object> ogEntity = entityAndHosts.getItem1();
+									if (ogEntity != null) {
+										boolean match = true;
+										if (!localOnly && attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
+											List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
+											Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
+											for (Object linkedTypeObj : linkedTypes) {
+												if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap && linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
+													tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
+												}
 											}
+											match = ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream().anyMatch(tmpTypeSet::contains);
 										}
-									}
-								}
-
-							}
-
-						}
-					} else if (attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
-						List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
-						Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
-						for (Object linkedTypeObj : linkedTypes) {
-							if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap
-									&& linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
-								tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
-							}
-						}
-						for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
-							List<Map<String, List<Map<String, String>>>> atList = atListEntry
-									.get(NGSIConstants.JSON_LD_LIST);
-							for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
-								List<Map<String, String>> objectList = hasObjectEntry
-										.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
-								for (Map<String, String> objectEntry : objectList) {
-									String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
-									Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-									if (entityAndHosts != null) {
-										Map<String, Object> ogEntity = entityAndHosts.getItem1();
-										if (ogEntity != null
-												&& ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream()
-														.anyMatch(tmpTypeSet::contains)) {
+										if (match) {
 											toAdd.put((String) ogEntity.get(NGSIConstants.JSON_LD_ID), ogEntity);
 											if (currentJoinLevel + 1 <= joinLevel) {
-												flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel,
-														toAdd, localOnly);
+												flatAddEntity(ogEntity, entityCache, currentJoinLevel + 1, joinLevel, toAdd, localOnly);
 											}
 										}
 									}
@@ -868,38 +825,24 @@ public class QueryService implements CSourceHandler {
 							.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
 					List<Map<String, Object>> entities = new ArrayList<>(hasObject.size());
 
-					if (localOnly) {
-
-						for (Map<String, String> idEntry : hasObject) {
-							String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
-							Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-							if (entityAndHosts != null) {
-								Map<String, Object> ogEntity = entityAndHosts.getItem1();
-								if (ogEntity != null) {
-									Map<String, Object> entity = MicroServiceUtils.deepCopyMap(ogEntity);
-									entities.add(entity);
-									if (currentJoinLevel + 1 <= joinLevel) {
-										inlineEntity(entity, entityCache, currentJoinLevel + 1, joinLevel, localOnly);
+					for (Map<String, String> idEntry : hasObject) {
+						String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
+						Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
+						if (entityAndHosts != null) {
+							Map<String, Object> ogEntity = entityAndHosts.getItem1();
+							if (ogEntity != null) {
+								boolean match = true;
+								if (!localOnly && attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
+									List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
+									Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
+									for (Object linkedTypeObj : linkedTypes) {
+										if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap && linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
+											tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
+										}
 									}
+									match = ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream().anyMatch(tmpTypeSet::contains);
 								}
-							}
-						}
-					} else if (attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
-						List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
-						Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
-						for (Object linkedTypeObj : linkedTypes) {
-							if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap
-									&& linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
-								tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
-							}
-						}
-						for (Map<String, String> idEntry : hasObject) {
-							String entityId = idEntry.get(NGSIConstants.JSON_LD_ID);
-							Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-							if (entityAndHosts != null) {
-								Map<String, Object> ogEntity = entityAndHosts.getItem1();
-								if (ogEntity != null && ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE))
-										.stream().anyMatch(tmpTypeSet::contains)) {
+								if (match) {
 									Map<String, Object> entity = MicroServiceUtils.deepCopyMap(ogEntity);
 									entities.add(entity);
 									if (currentJoinLevel + 1 <= joinLevel) {
@@ -920,67 +863,37 @@ public class QueryService implements CSourceHandler {
 							.get(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST);
 					List<Map<String, Object>> entities = new ArrayList<>(hasObjectList.size());
 
-					if (localOnly) {
-						for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
-							List<Map<String, List<Map<String, String>>>> atList = atListEntry
-									.get(NGSIConstants.JSON_LD_LIST);
-							for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
-								List<Map<String, String>> objectList = hasObjectEntry
-										.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
-								for (Map<String, String> objectEntry : objectList) {
-									String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
-									Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-									if (entityAndHosts != null) {
-										Map<String, Object> ogEntity = entityAndHosts.getItem1();
-										if (ogEntity != null) {
+					for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
+						List<Map<String, List<Map<String, String>>>> atList = atListEntry.get(NGSIConstants.JSON_LD_LIST);
+						for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
+							List<Map<String, String>> objectList = hasObjectEntry.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
+							for (Map<String, String> objectEntry : objectList) {
+								String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
+								Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
+								if (entityAndHosts != null) {
+									Map<String, Object> ogEntity = entityAndHosts.getItem1();
+									if (ogEntity != null) {
+										boolean match = true;
+										if (!localOnly && attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
+											List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
+											Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
+											for (Object linkedTypeObj : linkedTypes) {
+												if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap && linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
+													tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
+												}
+											}
+											match = ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream().anyMatch(tmpTypeSet::contains);
+										}
+										if (match) {
 											Map<String, Object> entity = MicroServiceUtils.deepCopyMap(ogEntity);
 											entities.add(entity);
 											if (currentJoinLevel + 1 <= joinLevel) {
-												inlineEntity(entity, entityCache, currentJoinLevel + 1, joinLevel,
-														localOnly);
+												inlineEntity(entity, entityCache, currentJoinLevel + 1, joinLevel, localOnly);
 											}
 										}
 									}
 								}
-
 							}
-
-						}
-					} else if (attribMap.containsKey(NGSIConstants.NGSI_LD_OBJECT_TYPE)) {
-						List<Object> linkedTypes = (List<Object>) attribMap.get(NGSIConstants.NGSI_LD_OBJECT_TYPE);
-						Set<String> tmpTypeSet = new HashSet<>(linkedTypes.size());
-						for (Object linkedTypeObj : linkedTypes) {
-							if (linkedTypeObj instanceof Map<?, ?> linkedTypeMap
-									&& linkedTypeMap.containsKey(NGSIConstants.JSON_LD_ID)) {
-								tmpTypeSet.add((String) linkedTypeMap.get(NGSIConstants.JSON_LD_ID));
-							}
-						}
-						for (Map<String, List<Map<String, List<Map<String, String>>>>> atListEntry : hasObjectList) {
-							List<Map<String, List<Map<String, String>>>> atList = atListEntry
-									.get(NGSIConstants.JSON_LD_LIST);
-							for (Map<String, List<Map<String, String>>> hasObjectEntry : atList) {
-								List<Map<String, String>> objectList = hasObjectEntry
-										.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
-								for (Map<String, String> objectEntry : objectList) {
-									String entityId = objectEntry.get(NGSIConstants.JSON_LD_ID);
-									Tuple2<Map<String, Object>, Set<String>> entityAndHosts = entityCache.get(entityId);
-									if (entityAndHosts != null) {
-										Map<String, Object> ogEntity = entityAndHosts.getItem1();
-										if (ogEntity != null
-												&& ((List<String>) ogEntity.get(NGSIConstants.JSON_LD_TYPE)).stream()
-														.anyMatch(tmpTypeSet::contains)) {
-											Map<String, Object> entity = MicroServiceUtils.deepCopyMap(ogEntity);
-											entities.add(entity);
-											if (currentJoinLevel + 1 <= joinLevel) {
-												inlineEntity(entity, entityCache, currentJoinLevel + 1, joinLevel,
-														localOnly);
-											}
-										}
-									}
-								}
-
-							}
-
 						}
 					}
 					if (!entities.isEmpty()) {
