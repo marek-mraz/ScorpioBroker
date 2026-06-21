@@ -4,9 +4,9 @@ kind: ServiceMonitor
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
-    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-21 - 12:08:19 +0000
+    app.quarkus.io/commit-id: ee7f624dcc01faf64eb438cdebf88b6e15a9a43a
+    app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 12:15:49 +0000
   labels:
     app.kubernetes.io/name: aio-runner
     app.kubernetes.io/version: 7.0.0
