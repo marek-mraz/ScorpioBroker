@@ -219,6 +219,9 @@ public class QueryParser {
 		attrs = attrs.replaceAll("[\"\\n\\s]", "");
 		AttrsQueryTerm result = new AttrsQueryTerm(context);
 		for (String attr : attrs.split(",")) {
+			if (attr.matches(".*[\\<\\\"\\'\\=\\;\\(\\)\\>\\?\\*\\{\\}].*")) {
+				throw new ResponseException(ErrorType.BadRequestData, "Invalid character in attribute names");
+			}
 			result.addAttr(attr);
 		}
 		if (result.getCompactedAttrs().contains(NGSIConstants.ID)

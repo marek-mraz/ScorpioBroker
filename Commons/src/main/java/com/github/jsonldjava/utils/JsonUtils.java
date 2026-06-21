@@ -10,6 +10,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -340,6 +341,35 @@ public class JsonUtils {
 		}
 	}
 
+	/**
+	 * Returns true if the given host resolves to a loopback, any-local, link-local
+	 * (incl. cloud metadata 169.254.169.254) or private/site-local address, mirroring
+	 * the guard applied to the primary context fetch in
+	 * {@code AtContextServer ContextCache.load}. Fails closed: any resolution error or
+	 * null host is treated as internal.
+	 */
+	private static boolean isInternalAddress(String host) {
+		if (host == null || host.isEmpty()) {
+			return true;
+		}
+		try {
+			for (InetAddress addr : InetAddress.getAllByName(host)) {
+				if (addr.isLoopbackAddress() || addr.isAnyLocalAddress() || addr.isLinkLocalAddress()
+						|| addr.isSiteLocalAddress()) {
+					return true;
+				}
+				String ip = addr.getHostAddress();
+				if (ip.startsWith("10.") || ip.startsWith("192.168.")
+						|| ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..+")) {
+					return true;
+				}
+			}
+			return false;
+		} catch (Exception e) {
+			return true;
+		}
+	}
+
 	private static Uni<Object> fromJsonLdViaHttpUri(final URL url, WebClient webClient, int linksFollowed) {
 
 		// We prefer application/ld+json, but fallback to application/json
@@ -372,6 +402,15 @@ public class JsonUtils {
 						if (linksFollowed + 1 > MAX_LINKS_FOLLOW) {
 							return Uni.createFrom().failure(new IOException(
 									"Too many alternate links followed. This may indicate a cycle. Aborting."));
+						}
+						// SSRF guard: an attacker-controlled (guard-passing) context server can
+						// return a Link: rel="alternate" header pointing at an internal/loopback
+						// address. The initial host was validated upstream, but this recursive hop
+						// is not, so re-validate the alternate target before following it.
+						if (isInternalAddress(alternateLink.getHost())) {
+							return Uni.createFrom().failure(new LdContextException(
+									"Refusing to follow alternate context link to a local/private address: "
+											+ alternateLink.toExternalForm()));
 						}
 						return fromJsonLdViaHttpUri(alternateLink, webClient, linksFollowed + 1);
 					}

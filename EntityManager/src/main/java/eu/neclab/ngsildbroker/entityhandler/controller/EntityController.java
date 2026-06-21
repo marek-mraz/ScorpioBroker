@@ -171,6 +171,12 @@ public class EntityController {// implements EntityHandlerInterface {
 	 */
 
 	@POST
+	@Path("/entities/attrs")
+	public Uni<RestResponse<Object>> appendEntityMissingId(HttpServerRequest req) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(req)));
+	}
+
+	@POST
 	@Path("/entities/{entityId}/attrs")
 	@Counted(name = "entity_update_total", description = "Total number of entity update requests", absolute = true)
 	@Timed(name = "entity_update_duration", description = "Duration of entity update requests", unit = MetricUnits.MILLISECONDS, absolute = true)
@@ -220,6 +226,12 @@ public class EntityController {// implements EntityHandlerInterface {
 	 * @param body
 	 * @return
 	 */
+	@PATCH
+	@Path("/entities/attrs/{attrId}")
+	public Uni<RestResponse<Object>> partialUpdateAttributeMissingId(HttpServerRequest req, @PathParam("attrId") String attrId) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(req)));
+	}
+
 	@PATCH
 	@Path("/entities/{entityId}/attrs/{attrId}")
 	@Counted(name = "attrs_patch_total", description = "Total number of attrs patch requests", absolute = true)
@@ -287,6 +299,12 @@ public class EntityController {// implements EntityHandlerInterface {
 	 * @param attrId
 	 * @return
 	 */
+
+	@DELETE
+	@Path("/entities/attrs/{attrId}")
+	public Uni<RestResponse<Object>> deleteAttributeMissingId(HttpServerRequest request, @PathParam("attrId") String attrId) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(request)));
+	}
 
 	@DELETE
 	@Path("/entities/{entityId}/attrs/{attrId}")
@@ -426,6 +444,20 @@ public class EntityController {// implements EntityHandlerInterface {
 
 	}
 
+	@DELETE
+	@Path("/entities")
+	public Uni<RestResponse<Object>> purgeEntities(HttpServerRequest request) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+				new ResponseException(ErrorType.BadRequestData, "Purge entities requires query parameters"),
+				HttpUtils.getTenant(request)));
+	}
+
+	@PUT
+	@Path("/entities")
+	public Uni<RestResponse<Object>> replaceEntityMissingId(HttpServerRequest request) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(request)));
+	}
+
 	@Path("/entities/{entityId}")
 	@PUT
 	@Counted(name = "entity_replace_total", description = "Total number of entity replace requests", absolute = true)
@@ -455,6 +487,14 @@ public class EntityController {// implements EntityHandlerInterface {
 		// return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e,
 		// HttpUtils.getTenant(request)));
 		// }
+		if (!body.containsKey(NGSIConstants.ID)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+				new ResponseException(ErrorType.BadRequestData, "Id can not be null"), HttpUtils.getTenant(request)));
+		}
+		if (!entityId.equals(body.get(NGSIConstants.ID))) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+				new ResponseException(ErrorType.BadRequestData, "Id can not be updated"), HttpUtils.getTenant(request)));
+		}
 		body.put(NGSIConstants.ID, entityId);
 		if (!body.containsKey(NGSIConstants.TYPE)) {
 			return Uni.createFrom()
@@ -476,13 +516,20 @@ public class EntityController {// implements EntityHandlerInterface {
 				});
 	}
 
+	@PUT
+	@Path("/entities/attrs/{attrId}")
+	public Uni<RestResponse<Object>> replaceAttributeMissingId(HttpServerRequest req, @PathParam("attrId") String attrId) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(req)));
+	}
+
 	@Path("/entities/{entityId}/attrs/{attrId}")
 	@PUT
 	@Counted(name = "attrs_replace_total", description = "Total number of attrs replace requests", absolute = true)
 	@Timed(name = "attrs_replace_duration", description = "Duration of attrs replace requests", unit = MetricUnits.MILLISECONDS, absolute = true)
 	@ConcurrentGauge(name = "attrs_replace_concurrent", description = "Number of concurrent attrs replace requests", absolute = true)
 	public Uni<RestResponse<Object>> replaceAttribute(@PathParam("attrId") String attrId,
-			@PathParam("entityId") String entityId, HttpServerRequest request, String bodyStr) {
+			@PathParam("entityId") String entityId, HttpServerRequest request, String bodyStr,
+			@QueryParam("datasetId") String datasetId) {
 		logger.debug("replacing Attrs");
 
 		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrId)) {
@@ -504,27 +551,23 @@ public class EntityController {// implements EntityHandlerInterface {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 		}
 		return JsonUtils.fromString(bodyStr).onItem().transformToUni(body -> {
-			Map<String, Object> bodyMap;
+			Map<String, Object> bodyMap = new HashMap<>();
 			if (body instanceof Map m) {
-				bodyMap = m;
+				bodyMap.put(attrId, List.of(m));
+			} else if (body instanceof List l) {
+				bodyMap.put(attrId, l);
 			} else {
 				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData), tenant));
 			}
 
-			return HttpUtils.expandBody(request, bodyMap, AppConstants.ENTITY_ATTRS_UPDATE_PAYLOAD, ldService)
+			return HttpUtils.expandBody(request, bodyMap, AppConstants.ENTITY_UPDATE_PAYLOAD, ldService)
 					.onItem()
 					.transformToUni(tuple -> {
 						String finalAttrId = tuple.getItem1().expandIri(attrId, false, true, null, null);
-						Map<String, Object> expandedPayload = tuple.getItem2();
-						Map<String, Object> finalPayload = new HashMap<>();
-						if (!expandedPayload.containsKey(finalAttrId)) {
-							finalPayload.put(finalAttrId, List.of(expandedPayload));
-						} else {
-							finalPayload = expandedPayload;
-						}
+						Map<String, Object> finalPayload = tuple.getItem2();
 
 						return entityService.replaceAttribute(tenant, finalPayload,
-								tuple.getItem1(), entityId, finalAttrId, request.headers(), viaHeaders).onItem()
+								tuple.getItem1(), entityId, finalAttrId, datasetId, request.headers(), viaHeaders).onItem()
 								.transform(opResult -> {
 									logger.debug("Done replacing attribute");
 									return HttpUtils.generateUpdateResultResponse(opResult);

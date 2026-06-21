@@ -7,6 +7,8 @@ The following table lists the configurable parameters and their default values.
 | Parameter | Description | Default |
 |  ---  |  ---  |  ---  |
 | `app.envs.QUARKUS_FLYWAY_ACTIVE` |   | false |
+| `app.envs.bushost` |   | localhost |
+| `app.envs.busport` |   | 9092 |
 | `app.envs.dbhost` |   | localhost |
 | `app.envs.dbname` |   | ngb |
 | `app.envs.dbpass` |   | ngb |

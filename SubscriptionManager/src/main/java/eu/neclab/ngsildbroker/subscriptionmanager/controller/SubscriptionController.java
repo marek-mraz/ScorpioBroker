@@ -182,19 +182,11 @@ public class SubscriptionController {
 		if (lastNotification != null) {
 			notificationParam.put(NGSIConstants.NGSI_LD_LAST_NOTIFICATION, lastNotification);
 			if (lastSuccess != null) {
-				if (lastSuccess.equals(lastNotification)) {
-					notificationParam.put(NGSIConstants.STATUS, "ok");
-				}
 				notificationParam.put(NGSIConstants.NGSI_LD_LAST_SUCCESS, lastSuccess);
 			}
 			if (lastFailure != null) {
-				if (lastFailure.equals(lastNotification)) {
-					notificationParam.put(NGSIConstants.STATUS, "failed");
-				}
 				notificationParam.put(NGSIConstants.NGSI_LD_LAST_FAILURE, lastFailure);
 			}
-		} else {
-			notificationParam.put(NGSIConstants.STATUS, "ok");
 		}
 
 	}

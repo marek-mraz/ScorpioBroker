@@ -672,6 +672,9 @@ public final class HttpUtils {
 							if (compacted.containsKey(JsonLdConsts.GRAPH)) {
 								finalCompacted = compacted.get(JsonLdConsts.GRAPH);
 								Object bodyContext = compacted.get(NGSIConstants.JSON_LD_CONTEXT);
+								if (bodyContext instanceof List && ((List) bodyContext).size() == 1) {
+									bodyContext = ((List) bodyContext).get(0);
+								}
 								if (finalCompacted instanceof List) {
 									List<Map<String, Object>> tmpList = (List<Map<String, Object>>) finalCompacted;
 									for (Map<String, Object> entry : tmpList) {
@@ -720,6 +723,9 @@ public final class HttpUtils {
 							if (compacted.containsKey(JsonLdConsts.GRAPH)) {
 								finalCompacted = compacted.get(JsonLdConsts.GRAPH);
 								Object bodyContext = compacted.get(NGSIConstants.JSON_LD_CONTEXT);
+								if (bodyContext instanceof List && ((List) bodyContext).size() == 1) {
+									bodyContext = ((List) bodyContext).get(0);
+								}
 								if (finalCompacted instanceof List) {
 									List<Map<String, Object>> tmpList = (List<Map<String, Object>>) finalCompacted;
 									for (Map<String, Object> entry : tmpList) {
@@ -1107,6 +1113,18 @@ public final class HttpUtils {
 			}
 		} catch (Exception e) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "scope is invalid"));
+		}
+		if (originalPayload.containsKey(NGSIConstants.TYPE)) {
+			Object type = originalPayload.get(NGSIConstants.TYPE);
+			if (!(type instanceof String) && !(type instanceof List)) {
+				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "type is invalid"));
+			}
+		}
+		if (originalPayload.containsKey(NGSIConstants.ID)) {
+			Object id = originalPayload.get(NGSIConstants.ID);
+			if (!(id instanceof String)) {
+				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "id is invalid"));
+			}
 		}
 		try {
 			atContextAllowed = HttpUtils.doPreflightCheck(request, atContext);
@@ -1542,7 +1560,7 @@ public final class HttpUtils {
 					String[] tmp = StringUtils.split(options, ',');
 					for (int i = 0; i < tmp.length; i++) {
 						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed option");
+							throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed option");
 						}
 						finalOptions.add(tmp[i]);
 					}
@@ -1552,7 +1570,7 @@ public final class HttpUtils {
 					String[] tmp = StringUtils.split(format, ',');
 					for (int i = 0; i < tmp.length; i++) {
 						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed format");
+							throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed format");
 						}
 						finalOptions.add(tmp[i]);
 					}

@@ -2,6 +2,8 @@
 app:
   envs:
     QUARKUS_FLYWAY_ACTIVE: "false"
+    bushost: localhost
+    busport: "9092"
     dbhost: localhost
     dbname: ngb
     dbpass: ngb

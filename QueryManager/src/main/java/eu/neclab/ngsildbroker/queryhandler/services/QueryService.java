@@ -181,27 +181,7 @@ public class QueryService implements CSourceHandler {
 			});
 
 			if (join != null && joinLevel > 0) {
-				if (NGSIConstants.FLAT.equals(join)) {
-					Map<String, Map<String, Object>> flatEntities = new HashMap<>(entityCache.size());
-					for (Entry<String, Tuple2<Map<String, Object>, Set<String>>> entityEntry : entityCache.entrySet()) {
-						Map<String, Object> entity = entityEntry.getValue().getItem1();
-						flatEntities.put((String) entity.get(NGSIConstants.JSON_LD_ID), entity);
-						result.setFlatJoin(flatEntities);
-					}
-				} else if (NGSIConstants.INLINE.equals(join)) {
-					for (Map<String, Object> entity : resultData) {
-						inlineEntity(entity, entityCache, 1, joinLevel, localOnly);
-					}
-				}
-				if ((pickTerm != null && pickTerm.isHasAnyLinked())
-						|| (omitTerm != null && omitTerm.isHasAnyLinked())) {
-					EntityTools.evaluateFilterQueries(result, null, null, null, null, pickTerm, omitTerm, null,
-							entityCache, null, true);
-				} else {
-					if (result.getFlatJoin() != null) {
-						result.getData().addAll(result.getFlatJoin().values());
-					}
-				}
+				return doJoinIfNeeded(tenant, result, entityCache, context, join, joinLevel, viaHeaders, pickTerm, omitTerm, false);
 			}
 
 			return Uni.createFrom().item(result);

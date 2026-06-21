@@ -4,9 +4,9 @@ kind: ServiceMonitor
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: ad732baf0fb16718b594ca0db65c1e85b5e7d972
-    app.quarkus.io/vcs-uri: https://github.com/Mrazbb/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-21 - 12:08:05 +0000
+    app.quarkus.io/commit-id: 658bd9ad69858bd83cf16835165d6fca971d83b1
+    app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
+    app.quarkus.io/build-timestamp: 2026-06-21 - 17:54:42 +0000
   labels:
     app.kubernetes.io/name: history-query-manager
     app.kubernetes.io/version: 7.0.0

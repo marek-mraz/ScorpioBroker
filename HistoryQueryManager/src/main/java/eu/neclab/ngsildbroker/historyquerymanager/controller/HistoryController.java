@@ -157,7 +157,7 @@ public class HistoryController {
 		}
 		if (!localOnly && typeQuery == null && attrs == null && geometry == null && q == null) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
-					new ResponseException(ErrorType.InvalidRequest), HttpUtils.getTenant(request)));
+					new ResponseException(ErrorType.BadRequestData, "At least one of type, attrs, geometry or q is required"), HttpUtils.getTenant(request)));
 		}
 
 		List<Object> ctx = HttpUtils.getAtContext(request);

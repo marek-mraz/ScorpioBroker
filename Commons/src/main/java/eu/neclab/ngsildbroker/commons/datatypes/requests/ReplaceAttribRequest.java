@@ -21,10 +21,11 @@ public class ReplaceAttribRequest extends BaseRequest {
 
 	}
 
-	public ReplaceAttribRequest(String tenant, Map<String, Object> resolved  ,String entityId,String attrId, boolean zipped) {
+	public ReplaceAttribRequest(String tenant, Map<String, Object> resolved  ,String entityId,String attrId, String datasetId, boolean zipped) {
 		super(tenant,entityId, resolved,
 				AppConstants.REPLACE_ATTRIBUTE_REQUEST, zipped);
 		this.attribName=attrId;
+		this.datasetId=datasetId;
    }
 
 }

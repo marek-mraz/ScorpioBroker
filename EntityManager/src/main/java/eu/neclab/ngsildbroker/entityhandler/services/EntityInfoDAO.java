@@ -541,18 +541,22 @@ public class EntityInfoDAO {
 				  FROM ENTITY
 				  WHERE id = $2
 				),
+				elems AS (
+				  SELECT ordinality - 1 AS idx
+				  FROM ENTITY, jsonb_array_elements(ENTITY->$3) WITH ORDINALITY
+				  WHERE id = $2 AND (
+				    ($4 IS NULL AND NOT value ? 'https://uri.etsi.org/ngsi-ld/datasetId') OR
+				    ($4 IS NOT NULL AND value @> jsonb_build_object('https://uri.etsi.org/ngsi-ld/datasetId', jsonb_build_array(jsonb_build_object('@id', $4::text))))
+				  )
+				),
 				json_data AS (
-				SELECT jsonb_strip_nulls(jsonb_object_agg(
-				key,
-				CASE WHEN jsonb_typeof(value->0) = 'object' and (value->0)?'https://uri.etsi.org/ngsi-ld/createdAt' THEN
-				jsonb_set(value, '{0,https://uri.etsi.org/ngsi-ld/createdAt}', old_entity.entity->key->0->'https://uri.etsi.org/ngsi-ld/createdAt', true)
-				ELSE value
-				END )) FROM JSONB_EACH($1::jsonb) CROSS JOIN old_entity )
+				  SELECT jsonb_set(($1::jsonb->$3)->0, '{https://uri.etsi.org/ngsi-ld/createdAt}', old_entity.entity->$3->(SELECT idx FROM elems)->'https://uri.etsi.org/ngsi-ld/createdAt', true) AS new_val
+				  FROM old_entity
+				)
 				UPDATE entity
-				SET entity = entity::jsonb || ((select * from json_data) - 'https://uri.etsi.org/ngsi-ld/createdAt')
+				SET entity = jsonb_set(entity, ARRAY[$3, (SELECT idx FROM elems)::text], (SELECT new_val FROM json_data))
 				WHERE id = $2
-				  AND ENTITY ? $3
-				  AND (ENTITY-> $3 )::jsonb->$4 IS NULL
+				  AND EXISTS (SELECT 1 FROM elems)
 				RETURNING (SELECT ENTITY FROM old_entity) AS old_entity;
 				""";
 		Tuple tuple = Tuple.of(new JsonObject(request.getFirstPayload()), request.getFirstId(),

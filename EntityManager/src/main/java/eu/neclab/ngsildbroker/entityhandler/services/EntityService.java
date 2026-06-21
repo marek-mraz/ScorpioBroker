@@ -2082,18 +2082,9 @@ public class EntityService implements CSourceHandler {
 	}
 
 	public Uni<NGSILDOperationResult> replaceAttribute(String tenant, Map<String, Object> resolved, Context context,
-			String entityId, String attrId, io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders) {
+			String entityId, String attrId, String datasetId, io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders) {
 		logger.debug("ReplaceMessage() :: started");
-		if (!resolved.containsKey(attrId)) {
-			if (resolved.size() == 1) {
-				return Uni.createFrom()
-						.failure(new ResponseException(ErrorType.BadRequestData, "resolved size " + resolved.size()));
-			}
-			Map<String, Object> temp = new HashMap<>();
-			temp.put(attrId, List.of(resolved));
-			resolved = temp;
-		}
-		ReplaceAttribRequest request = new ReplaceAttribRequest(tenant, resolved, entityId, attrId, zip);
+		ReplaceAttribRequest request = new ReplaceAttribRequest(tenant, resolved, entityId, attrId, datasetId, zip);
 		Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> localAndRemote = splitEntity(
 				request, entityId);
 		Map<String, Object> localEntity = localAndRemote.getItem1();
