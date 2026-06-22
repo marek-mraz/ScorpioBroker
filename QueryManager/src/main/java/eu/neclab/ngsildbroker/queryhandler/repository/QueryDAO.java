@@ -826,10 +826,14 @@ public class QueryDAO {
 			dollarCount++;
 			tuple.addArrayOfString(entityIds.toArray(new String[0]));
 			query.append(')');
-			query.append(" AND e_types && $");
-			query.append(dollarCount);
-			dollarCount++;
-			tuple.addArrayOfString(types.toArray(new String[0]));
+			// empty type set -> the linked entity's type is unknown (no objectType on the
+			// relationship); match by id alone instead of forcing an e_types overlap.
+			if (!types.isEmpty()) {
+				query.append(" AND e_types && $");
+				query.append(dollarCount);
+				dollarCount++;
+				tuple.addArrayOfString(types.toArray(new String[0]));
+			}
 			query.append(") OR ");
 
 		}

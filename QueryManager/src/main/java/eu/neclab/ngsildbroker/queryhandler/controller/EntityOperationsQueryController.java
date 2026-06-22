@@ -177,7 +177,9 @@ public class EntityOperationsQueryController {
 				Object joinLevelObj = body.get(NGSIConstants.QUERY_PARAMETER_JOINLEVEL);
 				Object ordering = body.get(NGSIConstants.NGSI_LD_ORDERING_NAME_SHORT);
 				String join = joinObj == null ? null : (String) joinObj;
-				int joinLevel = joinLevelObj == null ? 0 : (int) joinLevelObj;
+				// default joinLevel to 1 when join is requested without an explicit level,
+				// matching the GET path (POST query previously defaulted to 0 -> no join).
+				int joinLevel = joinLevelObj == null ? (join == null ? 0 : 1) : (int) joinLevelObj;
 				boolean entityDist = (boolean) body.getOrDefault(NGSIConstants.QUERY_PARAMETER_ENTITY_DIST, false);
 				if (entities == null && attrs == null && q == null && geoQ == null) {
 					return Uni.createFrom()

@@ -10,9 +10,9 @@ spec:
     spec:
       containers:
         - env:
-            - name: QUARKUS_INIT_AND_EXIT
-              value: "true"
             - name: QUARKUS_FLYWAY_ACTIVE
+              value: "true"
+            - name: QUARKUS_INIT_AND_EXIT
               value: "true"
           image: docker.io/dev/query-manager:7.0.0
           name: query-manager-flyway-init

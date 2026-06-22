@@ -1560,7 +1560,7 @@ public final class HttpUtils {
 					String[] tmp = StringUtils.split(options, ',');
 					for (int i = 0; i < tmp.length; i++) {
 						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-							throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed option");
+							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed option");
 						}
 						finalOptions.add(tmp[i]);
 					}
@@ -1570,7 +1570,7 @@ public final class HttpUtils {
 					String[] tmp = StringUtils.split(format, ',');
 					for (int i = 0; i < tmp.length; i++) {
 						if (!NGSIConstants.ALLOWED_OPTIONS.contains(tmp[i])) {
-							throw new ResponseException(ErrorType.BadRequestData, tmp[i] + " is not an allowed format");
+							throw new ResponseException(ErrorType.InvalidRequest, tmp[i] + " is not an allowed format");
 						}
 						finalOptions.add(tmp[i]);
 					}

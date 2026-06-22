@@ -39,11 +39,10 @@ public class OrderByTerm {
 
             this.orderGeometry = orderGeometry;
             if (orderDirection != null) {
-                if (orderDirection.contains("asc")) {
-                    orderDirection = "ASC";
-                } else {
-                    orderDirection = "DESC";
-                }
+                // input arrives as "ASC"/"DESC" (any case); assign to the field, not the
+                // local param. The previous code reassigned the param only, leaving
+                // this.orderDirection null so every sort defaulted to ASC.
+                this.orderDirection = orderDirection.toLowerCase().contains("desc") ? "DESC" : "ASC";
             } else {
                 this.orderDirection = null;
             }

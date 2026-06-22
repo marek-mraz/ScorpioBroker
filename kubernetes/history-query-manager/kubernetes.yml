@@ -4,9 +4,9 @@ kind: ServiceAccount
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
+    app.quarkus.io/commit-id: 55b98bca584c2a5730fee0c8d5142f3c6fdb2539
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 07:31:59 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 08:34:06 +0000
   labels:
     app.kubernetes.io/name: history-query-manager
     app.kubernetes.io/version: 7.0.0
@@ -49,9 +49,9 @@ kind: Service
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
+    app.quarkus.io/commit-id: 55b98bca584c2a5730fee0c8d5142f3c6fdb2539
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 07:31:59 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 08:34:06 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "10096"
@@ -77,9 +77,9 @@ kind: Deployment
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
+    app.quarkus.io/commit-id: 55b98bca584c2a5730fee0c8d5142f3c6fdb2539
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 07:31:59 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 08:34:06 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "10096"
@@ -99,9 +99,9 @@ spec:
     metadata:
       annotations:
         app.quarkus.io/quarkus-version: 3.28.4
-        app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
+        app.quarkus.io/commit-id: 55b98bca584c2a5730fee0c8d5142f3c6fdb2539
         app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-        app.quarkus.io/build-timestamp: 2026-06-22 - 07:31:59 +0000
+        app.quarkus.io/build-timestamp: 2026-06-22 - 08:34:06 +0000
         prometheus.io/scrape: "true"
         prometheus.io/path: /q/metrics
         prometheus.io/port: "10096"
@@ -117,21 +117,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: dbport
-              value: "5432"
             - name: gateway
               value: http://localhost:9090
-            - name: dbhost
-              value: localhost
+            - name: dbpass
+              value: ngb
             - name: dbname
               value: ngb
-            - name: bushost
+            - name: dbhost
               value: localhost
+            - name: dbport
+              value: "5432"
             - name: dbuser
-              value: ngb
-            - name: busport
-              value: "9092"
-            - name: dbpass
               value: ngb
             - name: QUARKUS_FLYWAY_ACTIVE
               value: "false"
@@ -192,9 +188,9 @@ spec:
     spec:
       containers:
         - env:
-            - name: QUARKUS_INIT_AND_EXIT
-              value: "true"
             - name: QUARKUS_FLYWAY_ACTIVE
+              value: "true"
+            - name: QUARKUS_INIT_AND_EXIT
               value: "true"
           image: docker.io/dev/history-query-manager:7.0.0
           name: history-query-manager-flyway-init
@@ -206,9 +202,9 @@ kind: ServiceMonitor
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
+    app.quarkus.io/commit-id: 55b98bca584c2a5730fee0c8d5142f3c6fdb2539
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 07:31:59 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 08:34:06 +0000
   labels:
     app.kubernetes.io/name: history-query-manager
     app.kubernetes.io/version: 7.0.0

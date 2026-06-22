@@ -552,7 +552,10 @@ public class QueryParser {
 			return;
 		}
 		input = URLDecoder.decode(input, StandardCharsets.UTF_8).trim();
-		if (input.isEmpty() || input.matches(".*[\\{\\}\\,\\|]{2,}.*") || input.startsWith(",") || input.startsWith("|") || input.startsWith("{") || input.startsWith("}") || input.matches(".*[^\\w\\d_\\-\\:\\.\\{\\}\\,\\|\\@].*")) {
+		// An opener/separator ({ , |) must not be directly followed by another
+		// brace/separator. A closing } may be followed by anything, so legitimate
+		// nested terms like locatedAt{...isInCountry{...}} (ending in }}) are allowed.
+		if (input.isEmpty() || input.matches(".*[\\{\\,\\|][\\{\\}\\,\\|].*") || input.startsWith(",") || input.startsWith("|") || input.startsWith("{") || input.startsWith("}") || input.matches(".*[^\\w\\d_\\-\\:\\.\\{\\}\\,\\|\\@].*")) {
 			throw new ResponseException(ErrorType.BadRequestData, "Invalid projection term");
 		}
 		int openBraces = 0;

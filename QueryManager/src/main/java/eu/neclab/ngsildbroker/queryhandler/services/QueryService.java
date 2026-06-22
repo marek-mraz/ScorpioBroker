@@ -735,6 +735,21 @@ public class QueryService implements CSourceHandler {
 									}
 								}
 							}
+						} else if (typeFilter == null) {
+							// objectType is optional in NGSI-LD. Without it we still follow the
+							// link by its object id, keyed under an empty type set so the local
+							// DB fetch matches by id alone (typed remote/federation needs a type).
+							Object hasObjectObj = map.get(NGSIConstants.NGSI_LD_HAS_OBJECT);
+							if (hasObjectObj instanceof List<?> objectList) {
+								Set<String> ids = new HashSet<>(objectList.size());
+								for (Object objectObj : objectList) {
+									ids.add(((Map<String, String>) objectObj).get(NGSIConstants.JSON_LD_ID));
+								}
+								ids.remove(null);
+								if (!ids.isEmpty()) {
+									result.computeIfAbsent(Collections.emptySet(), k -> new HashSet<>()).addAll(ids);
+								}
+							}
 						}
 
 					} else if (attrType.contains(NGSIConstants.NGSI_LD_LISTRELATIONSHIP)) {
@@ -1905,18 +1920,35 @@ public class QueryService implements CSourceHandler {
 				}
 
 			}
+			if (types.isEmpty()) {
+				// no-objectType links: match purely by id (same cache logic, type-independent)
+				Map<String, Tuple2<Map<String, Object>, Set<String>>> cacheIds = fullEntityCache
+					.getAllIds2EntityAndHosts();
+				if (cacheIds == null) {
+					cacheIds = new HashMap<>(0);
+				}
+				for (String id : entityIds) {
+					Tuple2<Map<String, Object>, Set<String>> entityAndHosts = cacheIds.get(id);
+					if (entityAndHosts == null || entityAndHosts.getItem2() == null
+						|| !entityAndHosts.getItem2().contains(NGSIConstants.JSON_LD_NONE)) {
+						idsForDB.add(id);
+					}
+				}
+			}
 			if (!idsForDB.isEmpty()) {
 				types2EntityIdsForDB.put(types, idsForDB);
 			}
-			List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypes = new ArrayList<>(1);
-			idsAndTypes.add(Tuple3.of(entityIds, typeQueryTerm, null));
-			Collection<QueryRemoteHost> remoteQueries = EntityTools.getRemoteQueries(idsAndTypes, null, linkedQ, null,
-					null, null, tenant2CId2RegEntries.row(tenant).values(), linkHeaders, fullEntityCache, viaHeaders,
-					splitEntities);
-			for (QueryRemoteHost remoteQuery : remoteQueries) {
+			if (!types.isEmpty()) {
+				List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypes = new ArrayList<>(1);
+				idsAndTypes.add(Tuple3.of(entityIds, typeQueryTerm, null));
+				Collection<QueryRemoteHost> remoteQueries = EntityTools.getRemoteQueries(idsAndTypes, null, linkedQ, null,
+						null, null, tenant2CId2RegEntries.row(tenant).values(), linkHeaders, fullEntityCache, viaHeaders,
+						splitEntities);
+				for (QueryRemoteHost remoteQuery : remoteQueries) {
 
-				unis.add(EntityTools.getRemoteEntities(remoteQuery, webClient, timeout, fedlimit, 0, ldService).onItem()
-						.transform(l -> Tuple3.of(l, remoteQuery)));
+					unis.add(EntityTools.getRemoteEntities(remoteQuery, webClient, timeout, fedlimit, 0, ldService).onItem()
+							.transform(l -> Tuple3.of(l, remoteQuery)));
+				}
 			}
 
 		}
