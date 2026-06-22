@@ -267,18 +267,27 @@ jobs:
           cd ngsi-ld-test-suite
           sudo apt-get update -y -qq
           sudo apt-get install -y -qq python3-virtualenv
-          virtualenv .venv 
+          virtualenv .venv
           source .venv/bin/activate
           pip install -r requirements.txt
-          
+
+          # The IOP suite reuses each ${bN_url} both as the client endpoint (called
+          # from this runner) AND as the registration endpoint stored inside broker A
+          # (called from inside its container during federation). 'localhost:908N' only
+          # works from the runner; inside a container it is the broker itself, so every
+          # federated query/GET returns []/404. 'host.docker.internal' resolves on both
+          # sides: 127.0.0.1 on the runner (alias below) and host-gateway in containers
+          # (extra_hosts in docker-compose-iop-test.yml), reaching the published ports.
+          echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+
           robot \
-            --variable url:http://localhost:9081/ngsi-ld/v1 \
-            --variable temporal_api_url:http://localhost:9081/ngsi-ld/v1 \
-            --variable b1_url:http://localhost:9081/ngsi-ld/v1 \
-            --variable b2_url:http://localhost:9082/ngsi-ld/v1 \
-            --variable b3_url:http://localhost:9083/ngsi-ld/v1 \
-            --variable b4_url:http://localhost:9084/ngsi-ld/v1 \
-            --variable b5_url:http://localhost:9085/ngsi-ld/v1 \
+            --variable url:http://host.docker.internal:9081/ngsi-ld/v1 \
+            --variable temporal_api_url:http://host.docker.internal:9081/ngsi-ld/v1 \
+            --variable b1_url:http://host.docker.internal:9081/ngsi-ld/v1 \
+            --variable b2_url:http://host.docker.internal:9082/ngsi-ld/v1 \
+            --variable b3_url:http://host.docker.internal:9083/ngsi-ld/v1 \
+            --variable b4_url:http://host.docker.internal:9084/ngsi-ld/v1 \
+            --variable b5_url:http://host.docker.internal:9085/ngsi-ld/v1 \
             --outputdir ./results-iop \
             ./IOP_TP || true
 
