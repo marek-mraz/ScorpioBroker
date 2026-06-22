@@ -301,8 +301,12 @@ public class EntityInfoDAO {
 			sql.append("ENTITY - $1 WHERE id=$2 AND ENTITY ? $1");
 			tuple = Tuple.of(request.getAttribName(), request.getFirstId());
 		} else if (request.getDatasetId() != null) {
-			sql.append("NGSILD_DELETEATTRIB(ENTITY, $1, $3) WHERE id=$2 AND ENTITY @> '{\"$1\": [{\""
-					+ NGSIConstants.NGSI_LD_DATA_SET_ID + "\": [{\"@id\":\"$3\"}]}]}'");
+			// $1/$3 are bind params, so they must NOT sit inside a quoted JSON literal
+			// (not interpolated there -> the @> check never matched -> 404). Build the
+			// containment object from the parameters instead.
+			sql.append("NGSILD_DELETEATTRIB(ENTITY, $1, $3) WHERE id=$2 AND ENTITY @> jsonb_build_object($1::text, "
+					+ "jsonb_build_array(jsonb_build_object('" + NGSIConstants.NGSI_LD_DATA_SET_ID
+					+ "', jsonb_build_array(jsonb_build_object('@id', $3::text)))))");
 			tuple = Tuple.of(request.getAttribName(), request.getFirstId(), request.getDatasetId());
 		} else {
 			sql.append(
@@ -542,11 +546,11 @@ public class EntityInfoDAO {
 				  WHERE id = $2
 				),
 				elems AS (
-				  SELECT ordinality - 1 AS idx
+				  SELECT (ordinality - 1)::int AS idx
 				  FROM ENTITY, jsonb_array_elements(ENTITY->$3) WITH ORDINALITY
 				  WHERE id = $2 AND (
-				    ($4 IS NULL AND NOT value ? 'https://uri.etsi.org/ngsi-ld/datasetId') OR
-				    ($4 IS NOT NULL AND value @> jsonb_build_object('https://uri.etsi.org/ngsi-ld/datasetId', jsonb_build_array(jsonb_build_object('@id', $4::text))))
+				    ($4::text IS NULL AND NOT value ? 'https://uri.etsi.org/ngsi-ld/datasetId') OR
+				    ($4::text IS NOT NULL AND value @> jsonb_build_object('https://uri.etsi.org/ngsi-ld/datasetId', jsonb_build_array(jsonb_build_object('@id', $4::text))))
 				  )
 				),
 				json_data AS (

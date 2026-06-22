@@ -868,7 +868,15 @@ public class EntityService implements CSourceHandler {
 
 	private Uni<NGSILDOperationResult> partialUpdateLocalEntity(UpdateEntityRequest request, String entityId,
 			Context context) {
-		return entityDAO.updateEntity(request).onItem().transformToUni(v -> {
+		// An NGSI-LD Null fragment means "delete the instance" and is handled by the generic
+		// update path; a genuine partial update needs ngsild_partialupdate (correct replace
+		// semantics + 404 when the attribute is absent). ponytail: route on the sentinel,
+		// which only appears as a delete marker, never as a real stored value.
+		Object attrVal = request.getFirstPayload().get(request.getAttribName());
+		boolean nullDelete = attrVal != null && attrVal.toString().contains(NGSIConstants.NGSI_LD_NULL);
+		Uni<Map<String, Object>> daoCall = nullDelete ? entityDAO.updateEntity(request)
+				: entityDAO.partialUpdateAttribute(request);
+		return daoCall.onItem().transformToUni(v -> {
 			NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.PARTIAL_UPDATE_REQUEST,
 					entityId, request.getTenant());
 			request.setPrevPayloadFromSingle(entityId, v);

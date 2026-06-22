@@ -10,9 +10,9 @@ spec:
     spec:
       containers:
         - env:
-            - name: QUARKUS_FLYWAY_ACTIVE
-              value: "true"
             - name: QUARKUS_INIT_AND_EXIT
+              value: "true"
+            - name: QUARKUS_FLYWAY_ACTIVE
               value: "true"
           image: docker.io/dev/history-entity-manager:7.0.0
           name: history-entity-manager-flyway-init

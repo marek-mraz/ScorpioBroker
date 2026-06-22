@@ -101,6 +101,19 @@ public class EntityController {// implements EntityHandlerInterface {
 				.transformToUni(tuple -> {
 					logger.debug("creating entity");
 
+					// A type that expands to a JSON-LD keyword (e.g. "type" -> "@type") is not a
+					// valid entity type -> reject rather than store it.
+					Object expType = tuple.getItem2().get(NGSIConstants.JSON_LD_TYPE);
+					if (expType instanceof List<?> expTypeList) {
+						for (Object t : expTypeList) {
+							if (t instanceof String ts && ts.startsWith("@")) {
+								return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+										new ResponseException(ErrorType.BadRequestData, "Invalid entity type: " + ts),
+										tenant));
+							}
+						}
+					}
+
 					return entityService
 							.createEntity(tenant, tuple.getItem2(), tuple.getItem1(), req.headers(), viaHeaders)
 							.onItem().transform(opResult -> {
