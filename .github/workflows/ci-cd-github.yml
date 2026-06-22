@@ -323,6 +323,9 @@ jobs:
   publish:
     name: Push Image to GitHub Registry
     needs: [test-api, test-etsi, test-iop] # Enforces that ALL tests must pass successfully
+    # Only publish on pushes to main/development-quarkus. PRs (esp. from forks) get a
+    # read-only GITHUB_TOKEN, so a push to GHCR would always fail and red the pipeline.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Download Docker Image Artifact
