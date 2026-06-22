@@ -1751,18 +1751,12 @@ public class QueryService implements CSourceHandler {
 
 										} else {
 											result = null;
-											logger.warn("FEDDEBUG entityMap non-200 from " + remoteHost.host()
-													+ " status="
-													+ (response == null ? "null-response" : response.statusCode())
-													+ " body=" + (response == null ? "" : response.bodyAsString()));
 										}
 										logger.debug("from remote host: " + remoteHost.host()
 												+ NGSIConstants.NGSI_LD_ENTITY_MAP_ENDPOINT
 												+ remoteHost.getQueryParam());
 										return Tuple2.of(result, remoteHost);
 									}).onFailure().recoverWithItem(e -> {
-										logger.warn("FEDDEBUG entityMap call threw for " + remoteHost.host() + " : "
-												+ e.getClass().getName() + " - " + e.getMessage(), e);
 										return Tuple2.of(null, remoteHost);
 									}));
 						}

@@ -151,33 +151,44 @@ public class CSourceService {
 				regTenant = null;
 			}
 
-			String baseUrl = ((List<Map<String, String>>) registrationIn.get(NGSIConstants.NGSI_LD_ENDPOINT)).get(0)
-					.get(NGSIConstants.JSON_LD_VALUE);
-			HttpRequest<Buffer> tmp = webClient.getAbs(baseUrl + NGSIConstants.ENDPOINT_SOURCE_IDENTITY);
-			if (regTenant != null) {
-				tmp = tmp.putHeader(NGSIConstants.TENANT_HEADER, regTenant);
+			String rawBaseUrl = ((List<Map<String, String>>) registrationIn.get(NGSIConstants.NGSI_LD_ENDPOINT))
+					.get(0).get(NGSIConstants.JSON_LD_VALUE);
+			// ENDPOINT_SOURCE_IDENTITY already starts with /ngsi-ld/v1, so a registered endpoint that
+			// ends in /ngsi-ld/v1 would double the path and the sourceIdentity fetch would fail (then
+			// fall back to the raw URL as the alias). Normalize to the base URL, matching RegistrationEntry.
+			if (rawBaseUrl != null) {
+				if (rawBaseUrl.endsWith("/")) {
+					rawBaseUrl = rawBaseUrl.substring(0, rawBaseUrl.length() - 1);
+				}
+				if (rawBaseUrl.endsWith("/ngsi-ld/v1")) {
+					rawBaseUrl = rawBaseUrl.substring(0, rawBaseUrl.length() - "/ngsi-ld/v1".length());
+				}
 			}
-			regUni = tmp.send().onItem().transform(resp -> {
-				if (resp.statusCode() != 200) {
-					String result;
-					if (regTenant != null) {
-						result = baseUrl + '/' + regTenant;
-					} else {
-						result = baseUrl;
-					}
-					return result;
-				}
-				return resp.bodyAsJsonObject().getString(NGSIConstants.NGSI_LD_SOURCE_ALIAS_SHORT);
-			}).onFailure().recoverWithItem(e -> {
-				String result;
+			String baseUrl = rawBaseUrl;
+			String fallbackAlias = regTenant != null ? baseUrl + '/' + regTenant : baseUrl;
+			Uni<String> aliasUni;
+			try {
+				HttpRequest<Buffer> tmp = webClient.getAbs(baseUrl + NGSIConstants.ENDPOINT_SOURCE_IDENTITY);
 				if (regTenant != null) {
-					result = baseUrl + '/' + regTenant;
-				} else {
-					result = baseUrl;
+					tmp = tmp.putHeader(NGSIConstants.TENANT_HEADER, regTenant);
 				}
-				logger.debug("Failed to retrieve sourceAlias recovering with " + result);
-				return result;
-			}).onItem().transform(sourceAlias -> {
+				aliasUni = tmp.send().onItem().transform(resp -> {
+					if (resp.statusCode() != 200) {
+						return fallbackAlias;
+					}
+					return resp.bodyAsJsonObject().getString(NGSIConstants.NGSI_LD_SOURCE_ALIAS_SHORT);
+				}).onFailure().recoverWithItem(e -> {
+					logger.debug("Failed to retrieve sourceAlias recovering with " + fallbackAlias);
+					return fallbackAlias;
+				});
+			} catch (Exception ex) {
+				// getAbs() throws synchronously on a malformed endpoint, bypassing the reactive
+				// recovery above; don't fail the whole registration, fall back to the base URL alias.
+				logger.debug("sourceAlias probe URL invalid (" + ex.getMessage() + "), recovering with "
+						+ fallbackAlias);
+				aliasUni = Uni.createFrom().item(fallbackAlias);
+			}
+			regUni = aliasUni.onItem().transform(sourceAlias -> {
 				registrationIn.put(NGSIConstants.NGSI_LD_SOURCE_ALIAS,
 						List.of(Map.of(NGSIConstants.JSON_LD_VALUE, sourceAlias)));
 				return registrationIn;

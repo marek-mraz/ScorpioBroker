@@ -292,10 +292,25 @@ public class EntityOperationsQueryController {
 								ErrorType.BadRequestData, "entities needs to be an array with an entry"), tenant));
 					}
 					idsAndTypeQueryAndIdPattern = new ArrayList<>(listSize);
-					for (Map<String, String> entityEntry : (List<Map<String, String>>) entities) {
-						String id = entityEntry.get(NGSIConstants.QUERY_PARAMETER_ID);
-						String idPattern = entityEntry.get(NGSIConstants.QUERY_PARAMETER_IDPATTERN);
-						String typeQuery = entityEntry.get(NGSIConstants.QUERY_PARAMETER_TYPE);
+					for (Object entryObj : (List<?>) entities) {
+						String id;
+						String idPattern;
+						String typeQuery;
+						// An entities entry is normally an EntitySelector object {id,type,idPattern},
+						// but a bare id string can arrive too; treat it as an id rather than crashing
+						// with a ClassCastException (which surfaced as a 500 on entityOperations/query).
+						if (entryObj instanceof Map<?, ?> entityEntry) {
+							id = (String) entityEntry.get(NGSIConstants.QUERY_PARAMETER_ID);
+							idPattern = (String) entityEntry.get(NGSIConstants.QUERY_PARAMETER_IDPATTERN);
+							typeQuery = (String) entityEntry.get(NGSIConstants.QUERY_PARAMETER_TYPE);
+						} else if (entryObj instanceof String s) {
+							id = s;
+							idPattern = null;
+							typeQuery = null;
+						} else {
+							return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(
+									ErrorType.BadRequestData, "entities entries must be objects or id strings"), tenant));
+						}
 						typeQueryTerm = QueryParser.parseTypeQuery(typeQuery, context);
 						if (typeQueryTerm != null && typeQueryTerm.getAllTypes().contains(NGSIConstants.NGSI_LD_STAR)) {
 							localOnlyTBU = true;
