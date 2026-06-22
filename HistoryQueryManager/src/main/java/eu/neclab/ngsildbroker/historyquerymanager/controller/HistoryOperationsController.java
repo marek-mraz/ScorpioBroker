@@ -298,7 +298,7 @@ public class HistoryOperationsController {
 				if (omit != null) {
 					omitTerm = OmitTerm.getNewRootInstance();
 					if (omit instanceof List<?>) {
-						QueryParser.parseProjectionTerm(pickTerm, String.join(",", (ArrayList<String>) omit), context);
+						QueryParser.parseProjectionTerm(omitTerm, String.join(",", (ArrayList<String>) omit), context);
 					} else if (omit instanceof String) {
 						QueryParser.parseProjectionTerm(omitTerm, (String) omit, context);
 					} else {
@@ -367,22 +367,27 @@ public class HistoryOperationsController {
 				} catch (ResponseException e) {
 					return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 				}
+				final TemporalQueryTerm tqtFinal = temporalQueryTerm;
 				return queryService.query(tenant, idsAndTypeQueryAndIdPattern, attrsQuery, qQueryTerm, csfQueryTerm,
 						geoQueryTerm, scopeQueryTerm, temporalQueryTerm, aggrTerm, langQuery, n, offsetN, nOrder,
 						actualLimit,
 						offset,
-						false, localOnly, context, request).onItem().transformToUni(queryResult -> {
+						false, localOnly, context, request, null, null, null).onItem().transformToUni(queryResult -> {
 							int payloadType;
 							if (aggrTerm == null) {
 								payloadType = AppConstants.QUERY_PAYLOAD;
 							} else {
 								payloadType = -1;
 							}
+								boolean forceListT = (payloadType != -1) && !(finalOptions != null && finalOptions.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES));
 							return HttpUtils.generateQueryResult(request, queryResult, finalOptions,
 									(String) geoproperty,
-									acceptHeader, count, actualLimit, langQuery, context, ldService, true, true, false,
+									acceptHeader, count, actualLimit, langQuery, context, ldService, forceListT, forceListT, false,
 									microServiceUtils.getGatewayString(),
-									NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType);
+									NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType)
+									.onItem().transform(resp -> HttpUtils.toPartialContent(resp,
+											aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(), tqtFinal,
+												"DESC".equals(nOrder), n) : null));
 						});
 
 			} catch (Exception e) {

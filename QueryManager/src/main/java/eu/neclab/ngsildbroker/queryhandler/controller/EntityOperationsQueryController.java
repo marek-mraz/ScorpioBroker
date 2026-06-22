@@ -183,7 +183,7 @@ public class EntityOperationsQueryController {
 						: (joinLevelObj instanceof Number nbr ? nbr.intValue()
 								: Integer.parseInt(joinLevelObj.toString()));
 				boolean entityDist = (boolean) body.getOrDefault(NGSIConstants.QUERY_PARAMETER_ENTITY_DIST, false);
-				if (entities == null && attrs == null && q == null && geoQ == null) {
+				if (!localOnlyTBU && entities == null && attrs == null && q == null && geoQ == null) {
 					return Uni.createFrom()
 							.item(HttpUtils.handleControllerExceptions(
 									new ResponseException(ErrorType.BadRequestData,

@@ -6,6 +6,9 @@ import eu.neclab.ngsildbroker.commons.constants.AppConstants;
 import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AggrTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.CSFQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.GeoQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.LanguageQueryTerm;
@@ -90,7 +93,7 @@ public class HistoryController {
 			@QueryParam("offsetN") @DefaultValue("0") int offsetN,
 			@QueryParam("orderN") @DefaultValue("ASC") String nOrderInput,
 			@QueryParam("firstN") @DefaultValue("-1") int firstN, @QueryParam("local") String localS,
-			@QueryParam("pick") String pick, @QueryParam("omit") String omit) {
+			@QueryParam("pick") String pick, @QueryParam("omit") String omit, @QueryParam("datasetId") String datasetId) {
 		boolean localOnly;
 		boolean count;
 		String tenant = HttpUtils.getTenant(request);
@@ -132,6 +135,17 @@ public class HistoryController {
 		}
 		int acceptHeader = HttpUtils.parseAcceptHeader(request.headers().getAll("Accept"));
 		if (format != null && !format.isEmpty()) {
+			if (format.equals("temporalValues")) {
+				aggrMethods = null;
+				aggrPeriodDuration = null;
+				if (options != null) {
+					options = options.replace("aggregatedValues", "");
+				}
+			} else if (format.equals("aggregatedValues")) {
+				if (options != null) {
+					options = options.replace("temporalValues", "");
+				}
+			}
 			options = (options == null || options.isEmpty()) ? format : options + "," + format;
 		}
 		String q;
@@ -178,6 +192,8 @@ public class HistoryController {
 		} catch (ResponseException e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 		}
+		final String aggrMethodsF = aggrMethods;
+		final String aggrPeriodDurationF = aggrPeriodDuration;
 		return HttpUtils.getContext(ctx, ldService).onItem().transformToUni(context -> {
 			TypeQueryTerm typeQueryTerm;
 			AttrsQueryTerm attrsQueryTerm;
@@ -188,7 +204,19 @@ public class HistoryController {
 			AggrTerm aggrTerm;
 			LanguageQueryTerm languageQueryTerm;
 			TemporalQueryTerm temporalQueryTerm;
+			DataSetIdTerm dataSetIdTerm = null;
+			PickTerm pickTermObj = null;
+			OmitTerm omitTermObj = null;
 			try {
+				dataSetIdTerm = QueryParser.parseDataSetId(datasetId);
+				if (pick != null) {
+					pickTermObj = new PickTerm();
+					QueryParser.parseProjectionTerm(pickTermObj, pick, context);
+				}
+				if (omit != null) {
+					omitTermObj = OmitTerm.getNewRootInstance();
+					QueryParser.parseProjectionTerm(omitTermObj, omit, context);
+				}
 				typeQueryTerm = QueryParser.parseTypeQuery(typeQuery, context);
 				attrsQueryTerm = QueryParser.parseAttrs(attrs, context);
 				qQueryTerm = QueryParser.parseQuery(q, context);
@@ -196,7 +224,7 @@ public class HistoryController {
 				geoQueryTerm = QueryParser.parseGeoQuery(georel, coordinates, geometry, geoproperty, context);
 				scopeQueryTerm = QueryParser.parseScopeQuery(scopeQ);
 				temporalQueryTerm = QueryParser.parseTempQuery(timeProperty, timerel, timeAt, endTimeAt);
-				aggrTerm = QueryParser.parseAggrTerm(aggrMethods, aggrPeriodDuration);
+				aggrTerm = QueryParser.parseAggrTerm(aggrMethodsF, aggrPeriodDurationF);
 				languageQueryTerm = QueryParser.parseLangQuery(lang);
 			} catch (Exception e) {
 				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
@@ -205,22 +233,32 @@ public class HistoryController {
 			tmp.add(Tuple3.of(idList, typeQueryTerm, idPattern));
 			return historyQueryService.query(tenant, tmp, attrsQueryTerm, qQueryTerm,
 					csfQueryTerm, geoQueryTerm, scopeQueryTerm, temporalQueryTerm, aggrTerm, languageQueryTerm,
-					n, offsetN, nOrder, actualLimit, offset, count, localOnly, context, request).onItem()
+					n, offsetN, nOrder, actualLimit, offset, count, localOnly, context, request, dataSetIdTerm, pickTermObj, omitTermObj).onItem()
 					.transformToUni(queryResult -> {
 						int payloadType;
+						// ponytail: this is the /temporal/entities QUERY endpoint, so the root is
+						// always a collection -> force the array wrapping even for a single match.
+						// forceAttributeList is separate: it must stay off for temporalValues/aggr
+						// (those don't render attrs as instance arrays).
+						boolean forceList = true;
+						boolean forceAttributeList = true;
 						if (aggrTerm == null) {
 							// ponytail: normalized temporal query keeps attrs as instance arrays
 							payloadType = AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD;
 						} else {
 							payloadType = -1;
+							forceAttributeList = false;
+						}
+						boolean temporalValues = finalOptions != null && finalOptions.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES);
+						if (temporalValues) {
+							forceAttributeList = false;
 						}
 						return HttpUtils.generateQueryResult(request, queryResult, finalOptions, geoproperty,
-								acceptHeader, count, actualLimit, languageQueryTerm, context, ldService, true, true,
+								acceptHeader, count, actualLimit, languageQueryTerm, context, ldService, forceList, forceAttributeList,
 								false, microServiceUtils.getGatewayString(),
 								NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType)
 								.onItem().transform(resp -> HttpUtils.toPartialContent(resp,
-										aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(),
-												HttpUtils.expandTimeProperty(temporalQueryTerm == null ? null : temporalQueryTerm.getTimeProperty()),
+										aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(), temporalQueryTerm,
 												"DESC".equals(nOrder), n) : null));
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
@@ -243,7 +281,7 @@ public class HistoryController {
 			@QueryParam("offsetN") @DefaultValue("0") int offsetN,
 			@QueryParam("orderN") @DefaultValue("ASC") String nOrderInput,
 			@QueryParam("firstN") @DefaultValue("-1") int firstN, @QueryParam("pick") String pick,
-			@QueryParam("omit") String omit) {
+			@QueryParam("omit") String omit, @QueryParam("datasetId") String datasetId) {
 		boolean localOnly;
 		// pick, omit and attrs are mutually exclusive (NGSI-LD 4.21)
 		if ((pick != null && omit != null) || (pick != null && attrs != null) || (attrs != null && omit != null)) {
@@ -258,6 +296,17 @@ public class HistoryController {
 		}
 		int acceptHeader = HttpUtils.parseAcceptHeader(request.headers().getAll("Accept"));
 		if (format != null && !format.isEmpty()) {
+			if (format.equals("temporalValues")) {
+				aggrMethods = null;
+				aggrPeriodDuration = null;
+				if (optionsString != null) {
+					optionsString = optionsString.replace("aggregatedValues", "");
+				}
+			} else if (format.equals("aggregatedValues")) {
+				if (optionsString != null) {
+					optionsString = optionsString.replace("temporalValues", "");
+				}
+			}
 			optionsString = (optionsString == null || optionsString.isEmpty()) ? format : optionsString + "," + format;
 		}
 		if (acceptHeader != 1 && acceptHeader != 2) {
@@ -292,36 +341,48 @@ public class HistoryController {
 		} catch (ResponseException e) {
 			return Uni.createFrom().failure(e);
 		}
+		final String aggrMethodsF = aggrMethods;
+		final String aggrPeriodDurationF = aggrPeriodDuration;
 		return ldService.parse(headerContext).onItem().transformToUni(context -> {
 			AttrsQueryTerm attrsQuery;
 			AggrTerm aggrQuery;
 			TemporalQueryTerm tempQuery;
+			DataSetIdTerm dataSetIdTerm = null;
+			PickTerm pickTermObj = null;
+			OmitTerm omitTermObj = null;
 			try {
 				HttpUtils.validateUri(entityId);
+				dataSetIdTerm = QueryParser.parseDataSetId(datasetId);
+				if (pick != null) {
+					pickTermObj = new PickTerm();
+					QueryParser.parseProjectionTerm(pickTermObj, pick, context);
+				}
+				if (omit != null) {
+					omitTermObj = OmitTerm.getNewRootInstance();
+					QueryParser.parseProjectionTerm(omitTermObj, omit, context);
+				}
 
 				attrsQuery = QueryParser.parseAttrs(attrs, context);
-				aggrQuery = QueryParser.parseAggrTerm(aggrMethods, aggrPeriodDuration);
+				aggrQuery = QueryParser.parseAggrTerm(aggrMethodsF, aggrPeriodDurationF);
 				tempQuery = QueryParser.parseTempQuery(timeProperty, timeRel, timeAt, endTimeAt);
 			} catch (Exception e) {
 				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 			}
 			return historyQueryService.retrieveEntity(HttpUtils.getTenant(request), entityId, attrsQuery, aggrQuery,
-					tempQuery, lang, n, offsetN, nOrder, localOnly, context, request.headers()).onItem()
+					tempQuery, lang, n, offsetN, nOrder, localOnly, context, request.headers(), pickTermObj, omitTermObj, dataSetIdTerm).onItem()
 					.transformToUni(entity -> {
 						boolean temporalValues = finalOptions != null && finalOptions
 								.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES);
 						if (aggrQuery != null) {
 							// aggregated temporal representation
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
-									geometryProperty, finalOptions, null, ldService, null, null, false, true, -1);
+									geometryProperty, finalOptions, null, ldService, null, null, false, false, -1);
 						}
 						// NGSI-LD 6.3.10: non-aggregated temporal retrieval -> 206 + Content-Range
-						String contentRange = HttpUtils.temporalContentRange(entity,
-								HttpUtils.expandTimeProperty(tempQuery == null ? null : tempQuery.getTimeProperty()),
-								"DESC".equals(nOrder), n);
+						String contentRange = HttpUtils.temporalContentRange(entity, tempQuery, "DESC".equals(nOrder), n);
 						if (temporalValues) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
-									geometryProperty, finalOptions, null, ldService, null, null, true, true, AppConstants.ENTITY_RETRIEVED_PAYLOAD)
+									geometryProperty, finalOptions, null, ldService, null, null, false, false, AppConstants.ENTITY_RETRIEVED_PAYLOAD)
 									.onItem().transform(resp -> HttpUtils.toPartialContent(resp, contentRange));
 						} else {
 							// ponytail: normalized temporal retrieval keeps attrs as instance arrays (NGSI-LD 4.5.6)

@@ -1,5 +1,7 @@
 package eu.neclab.ngsildbroker.commons.datatypes.terms;
 
+import java.util.ArrayList;
+
 import com.google.common.collect.Sets;
 import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
 import io.vertx.mutiny.sqlclient.Tuple;
@@ -471,29 +473,31 @@ public class DataSetIdTerm implements Serializable {
 
 	public int toTempSql(StringBuilder sql, Tuple tuple, int dollar) {
 		if (ids.contains(NGSIConstants.JSON_LD_NONE)) {
-			sql.append("NOT data @? $");
+			sql.append("(NOT data ? '");
+			sql.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+			sql.append("'");
+			if (ids.size() > 1) {
+				sql.append(" OR ");
+			}
+		} else {
+			sql.append("(");
+		}
+		List<String> realIds = new ArrayList<>(ids);
+		realIds.remove(NGSIConstants.JSON_LD_NONE);
+		if (!realIds.isEmpty()) {
+			sql.append("(data ? '");
+			sql.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+			sql.append("' AND data #>> '{");
+			sql.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+			sql.append(",0,");
+			sql.append(NGSIConstants.JSON_LD_ID);
+			sql.append("}' = ANY($");
 			sql.append(dollar);
+			sql.append("))");
+			tuple.addArrayOfString(realIds.toArray(new String[0]));
 			dollar++;
-			tuple.addString("$.\"" + NGSIConstants.NGSI_LD_DATA_SET_ID + "\"");
-			sql.append(" OR ");
 		}
-		sql.append("data @? $");
-		sql.append(dollar);
-		dollar++;
-		StringBuilder tmp = new StringBuilder(128);
-		tmp.append("$.\"");
-		tmp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-		tmp.append("\"[0].\"");
-		tmp.append(NGSIConstants.JSON_LD_ID);
-		tmp.append("\" ? (@ == [");
-		for (String id : ids) {
-			tmp.append('"');
-			tmp.append(id);
-			tmp.append("\",");
-		}
-		tmp.setLength(tmp.length() - 1);
-		tmp.append("])");
-		tuple.addString(tmp.toString());
+		sql.append(")");
 		return dollar;
 	}
 

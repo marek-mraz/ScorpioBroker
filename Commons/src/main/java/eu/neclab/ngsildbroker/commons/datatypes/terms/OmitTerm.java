@@ -265,11 +265,11 @@ public class OmitTerm extends ProjectionTerm {
 	}
 
 	public int toTempSql(StringBuilder query, Tuple tuple, int dollar) {
-		query.append("attributeid = any($");
+		query.append("NOT attributeid = ANY($");
 		query.append(dollar);
 		query.append(')');
 		dollar++;
-		tuple.addArrayOfString(getAllTopLevelAttribs(true).toArray(new String[0]));
+		tuple.addArrayOfString(getAllTopLevelAttribs(false).toArray(new String[0]));
 		return dollar;
 	}
 

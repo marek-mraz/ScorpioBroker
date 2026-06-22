@@ -58,6 +58,56 @@ public class OrderByTerm {
         orderTerms.add(new TermEntry(orderTerm, collation, orderFrom, orderDirection, orderGeometry));
     }
 
+    public int compare(Map<String, Object> a, Map<String, Object> b, Context context) {
+        for (TermEntry term : orderTerms) {
+            Object valA = getValue(a, term.splittedOrderTerm, context);
+            Object valB = getValue(b, term.splittedOrderTerm, context);
+            if (valA == null && valB == null) continue;
+            if (valA == null) return 1;
+            if (valB == null) return -1;
+            int cmp;
+            if (valA instanceof Number && valB instanceof Number) {
+                cmp = Double.compare(((Number)valA).doubleValue(), ((Number)valB).doubleValue());
+            } else {
+                cmp = String.valueOf(valA).compareTo(String.valueOf(valB));
+            }
+            if (cmp != 0) {
+                return term.orderDirection != null && term.orderDirection.equals("DESC") ? -cmp : cmp;
+            }
+        }
+        return 0;
+    }
+
+    private Object getValue(Map<String, Object> entity, String[] path, Context context) {
+        Object current = entity;
+        for (String p : path) {
+            String expanded = context.expandIri(p, false, true, null, null);
+            if (current instanceof Map<?,?> m) {
+                Object next = m.get(expanded);
+                current = next;
+                if (current instanceof List<?> l && !l.isEmpty()) {
+                    current = l.get(0);
+                }
+            } else {
+                return null;
+            }
+        }
+        if (current instanceof Map<?,?> m) {
+            if (m.containsKey(NGSIConstants.JSON_LD_VALUE)) {
+                return m.get(NGSIConstants.JSON_LD_VALUE);
+            }
+            if (m.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)) {
+                Object hv = m.get(NGSIConstants.NGSI_LD_HAS_VALUE);
+                if (hv instanceof List<?> l && !l.isEmpty()) {
+                    if (l.get(0) instanceof Map<?,?> m2) {
+                        return m2.get(NGSIConstants.JSON_LD_VALUE);
+                    }
+                }
+            }
+        }
+        return current;
+    }
+
     public int toSqlOrderValue(StringBuilder sql, int dollar, Tuple tuple, ObjectMapper objectMapper, Context context,
             DataSetIdTerm datasetIdTerm, boolean useDefaultForGeo)
             throws ResponseException {

@@ -267,7 +267,7 @@ public class PickTerm extends ProjectionTerm {
 	}
 
 	public int toTempSql(StringBuilder query, Tuple tuple, int dollar) {
-		query.append("not attributeid = any($");
+		query.append("attributeid = ANY($");
 		query.append(dollar);
 		query.append(')');
 		dollar++;

@@ -612,8 +612,10 @@ public class QueryController {
 		if (actualLimit > maxLimit) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.TooManyResults));
 		}
-		if (id == null && typeQuery == null && attrs == null && geometry == null && q == null
-				&& pick == null && idPattern == null) {
+		// ponytail: id/idPattern/pick also satisfy the minimum (GET-by-id and id-based
+		// queries route through here); without them retrieve-by-id wrongly 400s.
+		if (!localOnly && id == null && idPattern == null && pick == null && typeQuery == null && attrs == null
+				&& geometry == null && q == null) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData,
 					"Minimum required input field is id, idPattern, type, attrs, q, pick or a geo query"));
 		}

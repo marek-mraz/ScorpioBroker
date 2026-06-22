@@ -36,6 +36,9 @@ import eu.neclab.ngsildbroker.commons.datatypes.requests.CSourceBaseRequest;
 import eu.neclab.ngsildbroker.commons.datatypes.results.QueryResult;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AggrTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.CSFQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.GeoQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.LanguageQueryTerm;
@@ -98,11 +101,11 @@ public class HistoryQueryService implements CSourceHandler {
 			ScopeQueryTerm scopeQuery, TemporalQueryTerm tempQuery, AggrTerm aggrQuery, LanguageQueryTerm langQuery,
 			int n, int offsetN, String orderN, Integer limit, Integer offSet, Boolean count, Boolean localOnly,
 			Context context,
-			HttpServerRequest request) {
+			HttpServerRequest request, DataSetIdTerm dataSetIdTerm, PickTerm pickTerm, OmitTerm omitTerm) {
 		Uni<QueryResult> local = historyDAO
 				.query(tenant, idsAndTypeQueryAndIdPattern, attrsQuery, qQuery, geoQuery,
 						scopeQuery, context, limit,
-						offSet, null, null, -1, null, null, null, "", false, true, true, null,
+						offSet, dataSetIdTerm, null, -1, null, pickTerm, omitTerm, "", false, true, true, null,
 						localOnly, false, false,
 						count, null, false, tempQuery, aggrQuery, n, offsetN, orderN)
 				.onFailure()
@@ -218,12 +221,12 @@ public class HistoryQueryService implements CSourceHandler {
 	public Uni<Map<String, Object>> retrieveEntity(String tenant, String entityId, AttrsQueryTerm attrsQuery,
 			AggrTerm aggrQuery, TemporalQueryTerm tempQuery, String lang, int n, int offsetN, String nOrder,
 			boolean localOnly, Context context,
-			io.vertx.core.MultiMap headersFromReq) {
+			io.vertx.core.MultiMap headersFromReq, PickTerm pickTerm, OmitTerm omitTerm, DataSetIdTerm dataSetIdTerm) {
 		List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypeQueryAndIdPattern = new ArrayList<>(1);
 		idsAndTypeQueryAndIdPattern.add(Tuple3.of(new String[] { entityId }, null, null));
 		Uni<Map<String, Object>> local = historyDAO.query(tenant, idsAndTypeQueryAndIdPattern, attrsQuery, null, null,
 				null, context, 1,
-				0, null, null, -1, null, null, null, "", false, true, true, null,
+				0, dataSetIdTerm, null, -1, null, pickTerm, omitTerm, "", false, true, true, null,
 				localOnly, false, false,
 				false, null, false, tempQuery, aggrQuery, n, offsetN, nOrder).onItem().transform(qR -> {
 					Map<String, Object> result;

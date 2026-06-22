@@ -279,52 +279,52 @@ public class AggrTerm implements Serializable {
             sql.append(" CROSS JOIN LATERAL (SELECT generate_series((SELECT ");
             if (from != null) {
                 sql.append("GREATEST($");
-                sql.append(fromDollar);
-                sql.append("::text::timestamp, MIN(");
-                sql.append(temporalProperty);
-                sql.append("))");
-            } else {
-                sql.append("MIN(");
-                sql.append(temporalProperty);
-                sql.append(')');
-            }
-            sql.append(" FROM temporalentityattrinstance WHERE attributeid = teai.attributeid), (SELECT ");
-            if (to != null) {
-                sql.append("LEAST($");
-                sql.append(toDollar);
-                sql.append("::text::timestamp, MAX(");
-                sql.append(temporalProperty);
-                sql.append("))");
-            } else {
-                sql.append("MAX(");
-                sql.append(temporalProperty);
-                sql.append(')');
-            }
-            sql.append(" FROM temporalentityattrinstance WHERE attributeid = teai.attributeid), $");
-            sql.append(periodDollar);
-            sql.append("::text::interval) as period) pr");
-        }
-        sql.append(" WHERE ");
-        sql.append(temporalProperty);
-        sql.append(" IS NOT NULL ");
-        if (from != null || to != null) {
-            sql.append(" AND ");
-            if (from != null) {
-                sql.append(temporalProperty);
-                sql.append(" > $");
-                sql.append(fromDollar);
-                sql.append("::text::timestamp");
-                if (to != null) {
-                    sql.append(" AND ");
-                }
-            }
-            if (to != null) {
-                sql.append(temporalProperty);
-                sql.append(" < $");
-                sql.append(toDollar);
-                sql.append("::text::timestamp");
-            }
-        }
+				sql.append(fromDollar);
+				sql.append("::text::timestamptz, MIN(");
+				sql.append(temporalProperty);
+				sql.append(")::text::timestamptz)");
+			} else {
+				sql.append("MIN(");
+				sql.append(temporalProperty);
+				sql.append(")::text::timestamptz");
+			}
+			sql.append(" FROM temporalentityattrinstance WHERE attributeid = teai.attributeid), (SELECT ");
+			if (to != null) {
+				sql.append("LEAST($");
+				sql.append(toDollar);
+				sql.append("::text::timestamptz, MAX(");
+				sql.append(temporalProperty);
+				sql.append(")::text::timestamptz)");
+			} else {
+				sql.append("MAX(");
+				sql.append(temporalProperty);
+				sql.append(")::text::timestamptz");
+			}
+			sql.append(" FROM temporalentityattrinstance WHERE attributeid = teai.attributeid), $");
+			sql.append(periodDollar);
+			sql.append("::text::interval) as period) pr");
+		}
+		sql.append(" WHERE ");
+		sql.append(temporalProperty);
+		sql.append(" IS NOT NULL ");
+		if (from != null || to != null) {
+			sql.append(" AND ");
+			if (from != null) {
+				sql.append(temporalProperty);
+				sql.append("::text::timestamptz > $");
+				sql.append(fromDollar);
+				sql.append("::text::timestamptz");
+				if (to != null) {
+					sql.append(" AND ");
+				}
+			}
+			if (to != null) {
+				sql.append(temporalProperty);
+				sql.append("::text::timestamptz < $");
+				sql.append(toDollar);
+				sql.append("::text::timestamptz");
+			}
+		}
         sql.append(
                 " GROUP BY ei.id, ei.e_types, ei.r_createdat, ei.r_modifiedat, ei.r_deletedat, ei.scope_entry, teai.attributeid, (teai.data #>> '{@type,0}')");
         if (period != null) {
@@ -430,23 +430,23 @@ public class AggrTerm implements Serializable {
             sql.append(tempProp);
             sql.append(')');
         }
-        sql.append(", 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')), jsonb_build_object('");
-        sql.append(NGSIConstants.JSON_LD_VALUE);
-        sql.append("', to_char(");
-        if (period != -1) {
-            sql.append("pr.period + $");
-            sql.append(period);
-            sql.append("::text::interval");
-        } else if (to != -1) {
-            sql.append('$');
-            sql.append(to);
-            sql.append("::text::timestamp");
-        } else {
-            sql.append("MAX(");
-            sql.append(tempProp);
-            sql.append(')');
-        }
-        sql.append(", 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')))) as ");
+        sql.append(", 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')), jsonb_build_object('");
+		sql.append(NGSIConstants.JSON_LD_VALUE);
+		sql.append("', to_char(");
+		if (period != -1) {
+			sql.append("pr.period + $");
+			sql.append(period);
+			sql.append("::text::interval");
+		} else if (to != -1) {
+			sql.append('$');
+			sql.append(to);
+			sql.append("::text::timestamp");
+		} else {
+			sql.append("MAX(");
+			sql.append(tempProp);
+			sql.append(')');
+		}
+		sql.append(", 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')))) as ");
         sql.append(aggrName);
         sql.append("_result");
     }

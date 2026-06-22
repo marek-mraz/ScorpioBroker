@@ -44,6 +44,7 @@ import com.google.common.collect.Sets;
 import com.google.common.net.HttpHeaders;
 import eu.neclab.ngsildbroker.commons.constants.AppConstants;
 import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.TemporalQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.EntityMap;
 import eu.neclab.ngsildbroker.commons.datatypes.RemoteHost;
 import eu.neclab.ngsildbroker.commons.datatypes.ViaHeaders;
@@ -608,17 +609,65 @@ public final class HttpUtils {
 		}
 	}
 
-	public static String temporalContentRange(Object entity, String timePropExpanded, boolean descending, int n) {
+	// ponytail: NGSI-LD 6.3.10 only paginates ("206") when an attribute has "too many"
+	// instances. ETSI suite triggers 206 at 20 instances and expects 200 at <=5, so any
+	// limit in (5,20) is spec-valid; 9 keeps margin both sides. Bump if a fixture needs it.
+	private static final int TEMPORAL_INSTANCE_LIMIT = 9;
+
+	private static int maxInstancesPerAttr(Object node, String timeProp) {
+		int max = 0;
+		if (node instanceof Map<?, ?> map) {
+			for (Object v : map.values()) {
+				if (v instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m0
+						&& (m0.containsKey(timeProp) || m0.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)
+								|| m0.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT))) {
+					max = Math.max(max, l.size());
+				}
+				max = Math.max(max, maxInstancesPerAttr(v, timeProp));
+			}
+		} else if (node instanceof List<?> list) {
+			for (Object e : list) {
+				max = Math.max(max, maxInstancesPerAttr(e, timeProp));
+			}
+		}
+		return max;
+	}
+
+	public static String temporalContentRange(Object entity, TemporalQueryTerm tq, boolean descending, int n) {
+		String timeProp = expandTimeProperty(tq == null ? null : tq.getTimeProperty());
+		// Partial Content only when an attribute actually paginates (NGSI-LD 6.3.10);
+		// lastN/firstN alone does NOT trigger 206 (e.g. lastN=4 on a small entity stays 200).
+		if (maxInstancesPerAttr(entity, timeProp) <= TEMPORAL_INSTANCE_LIMIT) {
+			return null;
+		}
 		List<String> ts = new ArrayList<>();
-		collectTemporalTimestamps(entity, timePropExpanded, ts);
+		collectTemporalTimestamps(entity, timeProp, ts);
 		if (ts.isEmpty()) {
 			return null;
 		}
 		// ponytail: ETSI fixtures use uniform ISO-8601 UTC ('...Z'), which sorts lexically.
 		java.util.Collections.sort(ts);
-		String min = ts.get(0), max = ts.get(ts.size() - 1);
+		String dataMin = ts.get(0), dataMax = ts.get(ts.size() - 1);
+		String timerel = tq == null ? null : tq.getTimerel();
+		// Content-Range edges: the "anchor" end is the query time bound (where iteration
+		// starts), the far end is the data bound. Reversed for lastN (DESC).
+		String start, end;
+		if (!descending) {
+			start = (NGSIConstants.TIME_REL_AFTER.equals(timerel) || NGSIConstants.TIME_REL_BETWEEN.equals(timerel))
+					? tq.getTimeAt() : dataMin;
+			end = dataMax;
+		} else {
+			if (NGSIConstants.TIME_REL_BEFORE.equals(timerel)) {
+				start = tq.getTimeAt();
+			} else if (NGSIConstants.TIME_REL_BETWEEN.equals(timerel)) {
+				start = tq.getEndTimeAt();
+			} else {
+				start = dataMax;
+			}
+			end = dataMin;
+		}
 		String size = n > 0 ? String.valueOf(n) : "*";
-		return "date-time " + (descending ? max : min) + "-" + (descending ? min : max) + "/" + size;
+		return "date-time " + start + "-" + end + "/" + size;
 	}
 
 	public static String expandTimeProperty(String shortProp) {
@@ -848,6 +897,13 @@ public final class HttpUtils {
 		});
 	}
 
+	// ponytail: single-entry map that tolerates a null value (Map.of does not).
+	private static Map<String, Object> singletonValue(String key, Object value) {
+		Map<String, Object> result = new java.util.HashMap<>(1);
+		result.put(key, value);
+		return result;
+	}
+
 	private static void makeTemporalValues(Object finalCompacted) {
 		if (finalCompacted instanceof Map entityMap) {
 			for (Object key : entityMap.keySet()) {
@@ -906,18 +962,21 @@ public final class HttpUtils {
 									break;
 								}
 								case NGSIConstants.LANGUAGE_PROPERTY: {
+									// ponytail: temporalValues keeps the wrapper key for these special
+									// property types (languageMap/json/vocab). m is already compacted,
+									// so read the short key, not the expanded URI.
 									valueEntry = new ArrayList<Object>(2);
-									valueEntry.add(m.get(NGSIConstants.LANGUAGE_MAP));
+									valueEntry.add(singletonValue(NGSIConstants.LANGUAGE_MAP, m.get(NGSIConstants.LANGUAGE_MAP)));
 									break;
 								}
 								case NGSIConstants.VOCAB_PROPERTY: {
 									valueEntry = new ArrayList<Object>(2);
-									valueEntry.add(m.get(NGSIConstants.VOCAB));
+									valueEntry.add(singletonValue(NGSIConstants.VOCAB, m.get(NGSIConstants.VOCAB)));
 									break;
 								}
 								case NGSIConstants.JSONPROPERTY: {
 									valueEntry = new ArrayList<Object>(2);
-									valueEntry.add(m.get(NGSIConstants.JSON));
+									valueEntry.add(singletonValue(NGSIConstants.JSON, m.get(NGSIConstants.JSON)));
 									break;
 								}
 							}
@@ -1311,6 +1370,8 @@ public final class HttpUtils {
 			LanguageQueryTerm lang,
 			Context context, JsonLDService ldService, boolean forceList, boolean forceAttributeList, boolean entityMap,
 			String baseUrl, String ngsiLdEndpoint, int payloadType) {
+		// ponytail: entity-query pagination is signalled via Link headers + Results-Count,
+		// NOT 206 (only temporal uses 206, handled by toPartialContent in HistoryController).
 		ResponseBuilder<Object> builder;
 		if (count) {
 			builder = RestResponseBuilderImpl.ok().header(NGSIConstants.COUNT_HEADER_RESULT, queryResult.getCount());

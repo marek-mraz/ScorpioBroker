@@ -552,7 +552,10 @@ public class HistoryEntityService implements CSourceHandler {
 	private Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> splitEntity(
 			BaseRequest request) {
 		Map<String, Object> originalEntity = request.getFirstPayload();
-		Collection<List<RegistrationEntry>> tenantRegs = tenant2CId2RegEntries.row(request.getTenant()).values();
+		// ponytail: snapshot the live Table row-view; concurrent registry sync mutating
+		// tenant2CId2RegEntries otherwise invalidates this iterator -> ConcurrentModificationException.
+		Collection<List<RegistrationEntry>> tenantRegs = new ArrayList<>(
+				tenant2CId2RegEntries.row(request.getTenant()).values());
 
 		Object originalScopes = originalEntity.remove(NGSIConstants.NGSI_LD_SCOPE);
 		String entityId = (String) originalEntity.remove(NGSIConstants.JSON_LD_ID);

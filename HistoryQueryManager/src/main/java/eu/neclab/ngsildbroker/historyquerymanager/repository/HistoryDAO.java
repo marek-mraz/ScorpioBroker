@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import jakarta.inject.Inject;
 import jakarta.enterprise.context.ApplicationScoped;
 import io.quarkus.runtime.Startup;
@@ -52,7 +53,7 @@ public class HistoryDAO {
 
 	private static Logger logger = LoggerFactory.getLogger(HistoryDAO.class);
 
-	private final String TIMESTAMP_FORMAT = "'YYYY-MM-DDThh24:MI:SSZ'";
+	private final String TIMESTAMP_FORMAT = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'";
 
 	@Inject
 	ConnectionManager connectionManager;
@@ -113,38 +114,38 @@ public class HistoryDAO {
 					sql.append(")) as SUMDATA");
 					break;
 				case NGSIConstants.AGGR_METH_MIN:
+					// ponytail: compare numerically (text MIN/MAX gives '100' < '120' < '80').
+					// PG has no max(jsonb), so cast to numeric like SUM/AVG; string-valued min/max
+					// (rare, untested) falls through to NULL rather than a lexical compare.
 					sql.append("MIN(CASE ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'number' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
+							+ NGSIConstants.JSON_LD_VALUE + "}') = 'number' THEN (data #> '{"
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')::numeric ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'boolean' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
-					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'string' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
+							+ NGSIConstants.JSON_LD_VALUE + "}') = 'boolean' THEN (data #> '{"
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')::numeric ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
 							+ NGSIConstants.JSON_LD_VALUE + "}') = 'array' THEN (JSONB_ARRAY_LENGTH(data #> ('{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')))::text ");
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')))::numeric ");
 					sql.append("ELSE NULL END)) ");
 					dollarplus = generateTimestampForAttr(sql, dollarCount, tempQuery, aggrQuery);
 					sql.append(")) as MINDATA");
 					break;
 				case NGSIConstants.AGGR_METH_MAX:
 
+					// ponytail: compare numerically (text MIN/MAX gives '100' < '120' < '80').
+					// PG has no max(jsonb), so cast to numeric like SUM/AVG; string-valued min/max
+					// (rare, untested) falls through to NULL rather than a lexical compare.
 					sql.append("(MAX(CASE ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'number' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
+							+ NGSIConstants.JSON_LD_VALUE + "}') = 'number' THEN (data #> '{"
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')::numeric ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'boolean' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
-					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
-							+ NGSIConstants.JSON_LD_VALUE + "}') = 'string' THEN (data #>> '{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}') ");
+							+ NGSIConstants.JSON_LD_VALUE + "}') = 'boolean' THEN (data #> '{"
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')::numeric ");
 					sql.append("WHEN JSONB_TYPEOF(data #> '{" + NGSIConstants.NGSI_LD_HAS_VALUE + ",0,"
 							+ NGSIConstants.JSON_LD_VALUE + "}') = 'array' THEN (JSONB_ARRAY_LENGTH(data #> ('{"
-							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')))::text ");
+							+ NGSIConstants.NGSI_LD_HAS_VALUE + ",0," + NGSIConstants.JSON_LD_VALUE + "}')))::numeric ");
 					sql.append("ELSE NULL END))) ");
 					dollarplus = generateTimestampForAttr(sql, dollarCount, tempQuery, aggrQuery);
 					sql.append(")) as MAXDATA");
@@ -267,29 +268,29 @@ public class HistoryDAO {
 			} else {
 				switch (tempQuery.getTimerel()) {
 					case NGSIConstants.TIME_REL_BEFORE:
-						sql.append("PRSTART, $");
+						sql.append("PRSTART::text::timestamptz, $");
 						sql.append(dollarCount);
-						sql.append("::text::timestamp");
+						sql.append("::text::timestamptz");
 						tuple.addString(tempQuery.getTimeAt());
 						dollarCount++;
 						break;
 					case NGSIConstants.TIME_REL_AFTER:
 						sql.append("$");
 						sql.append(dollarCount);
-						sql.append("::text::timestamp");
-						sql.append(", PRSTOP");
+						sql.append("::text::timestamptz");
+						sql.append(", PRSTOP::text::timestamptz");
 						tuple.addString(tempQuery.getTimeAt());
 						dollarCount++;
 						break;
 					case NGSIConstants.TIME_REL_BETWEEN:
 						sql.append("$");
 						sql.append(dollarCount);
-						sql.append("::text::timestamp");
+						sql.append("::text::timestamptz");
 						tuple.addString(tempQuery.getTimeAt());
 						dollarCount++;
 						sql.append(", $");
 						sql.append(dollarCount);
-						sql.append("::text::timestamp");
+						sql.append("::text::timestamptz");
 						tuple.addString(tempQuery.getEndTimeAt());
 						dollarCount++;
 						break;
@@ -302,7 +303,11 @@ public class HistoryDAO {
 			sql.append(expandTimeProp);
 			sql.append(",0,");
 			sql.append(NGSIConstants.JSON_LD_VALUE);
-			sql.append("}')::timestamp between pr.period and pr.period + $");
+			sql.append("}')::timestamp >= pr.period and (data #>> '{");
+			sql.append(expandTimeProp);
+			sql.append(",0,");
+			sql.append(NGSIConstants.JSON_LD_VALUE);
+			sql.append("}')::timestamp < pr.period + $");
 			sql.append(dollarCount);
 			sql.append("::text::interval");
 			tuple.addString(aggrQuery.getPeriod());
@@ -611,20 +616,34 @@ public class HistoryDAO {
 					List attribData = next.getJsonArray(7).getList();
 
 					entity = new HashMap<>(5 + attribIds.length);
-					entity.put(NGSIConstants.JSON_LD_ID, id);
-					entity.put(NGSIConstants.JSON_LD_TYPE, Lists.newArrayList(types));
+					Set<String> pickTopLevel = pickTerm == null ? null : pickTerm.getAllTopLevelAttribs(true);
+					Set<String> omitTopLevel = omitTerm == null ? null : omitTerm.getAllTopLevelAttribs(true);
+					// ponytail: pick/omit also govern core members (id/type/scope) on temporal reads,
+					// mirroring PickTerm.calculateEntity on the entity path. A pick naming only
+					// attributes drops id/type; an omit naming core members drops them.
+					if (keepCoreMember(NGSIConstants.JSON_LD_ID, pickTopLevel, omitTopLevel)) {
+						entity.put(NGSIConstants.JSON_LD_ID, id);
+					}
+					if (keepCoreMember(NGSIConstants.JSON_LD_TYPE, pickTopLevel, omitTopLevel)) {
+						entity.put(NGSIConstants.JSON_LD_TYPE, Lists.newArrayList(types));
+					}
 					entity.put(NGSIConstants.NGSI_LD_CREATED_AT, generateDateTime(createdAt));
 					entity.put(NGSIConstants.NGSI_LD_MODIFIED_AT, generateDateTime(modifiedAt));
 					if (deletedAt != null) {
 						entity.put(NGSIConstants.NGSI_LD_DELETED_AT, generateDateTime(deletedAt));
 					}
-					if (scopes != null) {
+					if (scopes != null && keepCoreMember(NGSIConstants.NGSI_LD_SCOPE, pickTopLevel, omitTopLevel)) {
 						entity.put(NGSIConstants.NGSI_LD_SCOPE, getScope(scopes));
 					}
 					if (aggrQuery == null) {
 						for (int i = 0; i < attribIds.length; i++) {
 							String attribId = attribIds[i];
-							entity.put(attribId, attribData.get(i));
+							Object dataItem = attribData.get(i);
+							// ponytail: set partial if lastN truncated this array
+							if (n > 0 && dataItem instanceof List && ((List<?>)dataItem).size() >= n) {
+								result.setResultsLeftAfter(1L);
+							}
+							entity.put(attribId, dataItem);
 						}
 					} else {
 						for (int i = 0; i < attribIds.length; i++) {
@@ -650,6 +669,10 @@ public class HistoryDAO {
 					}
 
 					resultData.add(entity);
+				}
+
+				if (orderBy != null) {
+					resultData.sort((a, b) -> orderBy.compare(a, b, context));
 				}
 
 				if (count) {
@@ -678,6 +701,18 @@ public class HistoryDAO {
 
 			return result;
 		});
+	}
+
+	// ponytail: a core member survives when no pick is set or it is explicitly picked,
+	// and is not explicitly omitted.
+	private static boolean keepCoreMember(String member, Set<String> pickTopLevel, Set<String> omitTopLevel) {
+		if (pickTopLevel != null && !pickTopLevel.contains(member)) {
+			return false;
+		}
+		if (omitTopLevel != null && omitTopLevel.contains(member)) {
+			return false;
+		}
+		return true;
 	}
 
 	private List<Map<String, String>> generateDateTime(LocalDateTime dbDate) {
@@ -751,6 +786,14 @@ public class HistoryDAO {
 				" FROM entityInfos ei INNER JOIN temporalentityattrinstance teai ON teai.temporalentity_id = ei.id WHERE 1=1 AND ");
 		if (attrsQuery != null) {
 			dollar = attrsQuery.toTempSql(sql, tuple, dollar, dataSetIdTerm);
+			sql.append(" AND ");
+		}
+		if (pickTerm != null) {
+			dollar = pickTerm.toTempSql(sql, tuple, dollar);
+			sql.append(" AND ");
+		}
+		if (omitTerm != null) {
+			dollar = omitTerm.toTempSql(sql, tuple, dollar);
 			sql.append(" AND ");
 		}
 		if (tempQuery != null) {
@@ -873,7 +916,11 @@ public class HistoryDAO {
 							if (valObj != null) {
 								String potentialValue = valObj.toString();
 								if (org.apache.commons.lang3.math.NumberUtils.isCreatable(potentialValue)) {
-									realValues.get(0).put(JsonLdConsts.VALUE, org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue));
+									Number parsed = org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue);
+									if (potentialValue.contains(".")) {
+										parsed = parsed.doubleValue();
+									}
+									realValues.get(0).put(JsonLdConsts.VALUE, parsed);
 								}
 							}
 						}
@@ -893,7 +940,11 @@ public class HistoryDAO {
 							if (valObj != null) {
 								String potentialValue = valObj.toString();
 								if (org.apache.commons.lang3.math.NumberUtils.isCreatable(potentialValue)) {
-									realValues.get(0).put(JsonLdConsts.VALUE, org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue));
+									Number parsed = org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue);
+									if (potentialValue.contains(".")) {
+										parsed = parsed.doubleValue();
+									}
+									realValues.get(0).put(JsonLdConsts.VALUE, parsed);
 								}
 							}
 						}
