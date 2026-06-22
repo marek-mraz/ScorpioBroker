@@ -386,7 +386,12 @@ public class OmitTerm extends ProjectionTerm {
 					for (Object attrInstanceObj : attrList) {
 						if (attrInstanceObj instanceof Map<?, ?> instanceMap
 								&& instanceMap.containsKey(NGSIConstants.JSON_LD_TYPE)) {
-							String type = ((List<String>) instanceMap.get(NGSIConstants.JSON_LD_TYPE)).get(0);
+							Object typeObj = instanceMap.get(NGSIConstants.JSON_LD_TYPE);
+							// @type may be expanded as a List<String> or, for some inlined nodes, a plain
+							// String; handle both rather than blind-casting to List (caused a 500 CCE on
+							// flat-join/omit over linked entities).
+							String type = typeObj instanceof List<?> tl ? (tl.isEmpty() ? null : (String) tl.get(0))
+									: (typeObj instanceof String ts ? ts : null);
 							if (NGSIConstants.NGSI_LD_RELATIONSHIP.equals(type)) {
 								Set<String> ids = Sets.newHashSet();
 								List<Map<String, String>> objList = (List<Map<String, String>>) instanceMap

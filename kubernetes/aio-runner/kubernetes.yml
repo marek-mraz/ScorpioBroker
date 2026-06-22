@@ -4,9 +4,9 @@ kind: ServiceAccount
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 6c55281f80e3408f7189599c0a55b4175e619e10
+    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 06:52:10 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 07:32:13 +0000
   labels:
     app.kubernetes.io/name: aio-runner
     app.kubernetes.io/version: 7.0.0
@@ -49,9 +49,9 @@ kind: Service
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 6c55281f80e3408f7189599c0a55b4175e619e10
+    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 06:52:10 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 07:32:13 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "9090"
@@ -77,9 +77,9 @@ kind: Deployment
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 6c55281f80e3408f7189599c0a55b4175e619e10
+    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 06:52:10 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 07:32:13 +0000
     prometheus.io/scrape: "true"
     prometheus.io/path: /q/metrics
     prometheus.io/port: "9090"
@@ -99,9 +99,9 @@ spec:
     metadata:
       annotations:
         app.quarkus.io/quarkus-version: 3.28.4
-        app.quarkus.io/commit-id: 6c55281f80e3408f7189599c0a55b4175e619e10
+        app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
         app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-        app.quarkus.io/build-timestamp: 2026-06-22 - 06:52:10 +0000
+        app.quarkus.io/build-timestamp: 2026-06-22 - 07:32:13 +0000
         prometheus.io/scrape: "true"
         prometheus.io/path: /q/metrics
         prometheus.io/port: "9090"
@@ -117,22 +117,22 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: busport
-              value: "9092"
-            - name: dbuser
+            - name: gateway
+              value: http://localhost:9090
+            - name: dbpass
               value: ngb
             - name: dbname
               value: ngb
-            - name: dbpass
+            - name: dbuser
               value: ngb
-            - name: dbport
-              value: "5432"
+            - name: busport
+              value: "9092"
             - name: bushost
               value: localhost
             - name: dbhost
               value: localhost
-            - name: gateway
-              value: http://localhost:9090
+            - name: dbport
+              value: "5432"
             - name: QUARKUS_FLYWAY_ACTIVE
               value: "false"
           image: docker.io/dev/aio-runner:7.0.0
@@ -192,9 +192,9 @@ spec:
     spec:
       containers:
         - env:
-            - name: QUARKUS_FLYWAY_ACTIVE
-              value: "true"
             - name: QUARKUS_INIT_AND_EXIT
+              value: "true"
+            - name: QUARKUS_FLYWAY_ACTIVE
               value: "true"
           image: docker.io/dev/aio-runner:7.0.0
           name: aio-runner-flyway-init
@@ -206,9 +206,9 @@ kind: ServiceMonitor
 metadata:
   annotations:
     app.quarkus.io/quarkus-version: 3.28.4
-    app.quarkus.io/commit-id: 6c55281f80e3408f7189599c0a55b4175e619e10
+    app.quarkus.io/commit-id: 910e1055dfdf61af26aff85bcd828d537c71631a
     app.quarkus.io/vcs-uri: https://github.com/marek-mraz/ScorpioBroker.git
-    app.quarkus.io/build-timestamp: 2026-06-22 - 06:52:10 +0000
+    app.quarkus.io/build-timestamp: 2026-06-22 - 07:32:13 +0000
   labels:
     app.kubernetes.io/name: aio-runner
     app.kubernetes.io/version: 7.0.0

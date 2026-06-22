@@ -486,8 +486,8 @@ public class RegistrationEntry {
 								tmpEId = (String) entitiesEntry.get(NGSIConstants.JSON_LD_ID);
 							}
 							if (entitiesEntry.containsKey(NGSIConstants.NGSI_LD_ID_PATTERN)) {
-								tmpEIdp = ((List<Map<String, String>>) entitiesEntry.get(NGSIConstants.JSON_LD_ID))
-										.get(0).get(NGSIConstants.JSON_LD_VALUE);
+								tmpEIdp = ((List<Map<String, String>>) entitiesEntry
+										.get(NGSIConstants.NGSI_LD_ID_PATTERN)).get(0).get(NGSIConstants.JSON_LD_VALUE);
 							}
 
 							boolean containsProps = infoEntry.containsKey(NGSIConstants.NGSI_LD_PROPERTIES);
