@@ -209,7 +209,8 @@ public class HistoryController {
 					.transformToUni(queryResult -> {
 						int payloadType;
 						if (aggrTerm == null) {
-							payloadType = AppConstants.QUERY_PAYLOAD;
+							// ponytail: normalized temporal query keeps attrs as instance arrays
+							payloadType = AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD;
 						} else {
 							payloadType = -1;
 						}
@@ -303,13 +304,20 @@ public class HistoryController {
 			return historyQueryService.retrieveEntity(HttpUtils.getTenant(request), entityId, attrsQuery, aggrQuery,
 					tempQuery, lang, n, offsetN, nOrder, localOnly, context, request.headers()).onItem()
 					.transformToUni(entity -> {
-						if (aggrQuery != null || (finalOptions != null && !finalOptions
-								.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES))) {
+						boolean temporalValues = finalOptions != null && finalOptions
+								.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_TEMPORALVALUES);
+						if (aggrQuery != null) {
+							// aggregated temporal representation
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, false, true, -1);
-						} else {
+						} else if (temporalValues) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, true, true, AppConstants.ENTITY_RETRIEVED_PAYLOAD);
+						} else {
+							// ponytail: normalized temporal retrieval keeps attrs as instance arrays (NGSI-LD 4.5.6)
+							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
+									geometryProperty, finalOptions, null, ldService, null, null, false, true,
+									AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD);
 						}
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));

@@ -214,7 +214,8 @@ public class JsonLdApi {
 			boolean concise = options != null && (options.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_KEYVALUES)
 					|| options.contains(NGSIConstants.QUERY_PARAMETER_OPTIONS_SIMPLIFIED));
 			boolean temporal = payloadType == AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD;
-			if (payloadType == AppConstants.QUERY_PAYLOAD || payloadType == AppConstants.ENTITY_RETRIEVED_PAYLOAD) {
+			if (payloadType == AppConstants.QUERY_PAYLOAD || payloadType == AppConstants.ENTITY_RETRIEVED_PAYLOAD
+					|| payloadType == AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD) {
 				return compactEntity(elem, activeCtx, removeSysAttrs, keyValue, concise,
 						temporal, langQuery, options);
 			}
@@ -830,6 +831,12 @@ public class JsonLdApi {
 						result.put(activeCtx.compactIri(key),
 								compactAttribute(key, l, activeCtx, removeSysAttrs, keyValue, concise, temporal,
 										langQuery, options));
+					} else if (temporal && expandedValue instanceof Map) {
+						// ponytail: temporal retrieval delivers a single instance as a bare
+						// object; render it via compactAttribute so it stays an array
+						result.put(activeCtx.compactIri(key),
+								compactAttribute(key, new ArrayList<>(List.of(expandedValue)), activeCtx,
+										removeSysAttrs, keyValue, concise, temporal, langQuery, options));
 					} else {
 						result.put(activeCtx.compactIri(key),
 								compact(activeCtx, key, expandedValue, true, -1, options, langQuery));
@@ -1128,9 +1135,9 @@ public class JsonLdApi {
 			}
 		}
 
-		if (result.size() == 1)
-
-		{
+		// ponytail: temporal representation keeps attribute instances as an array
+		// even when there is a single instance (NGSI-LD 4.5.6); non-temporal collapses.
+		if (result.size() == 1 && !temporal) {
 			return result.get(0);
 		}
 		return result;
