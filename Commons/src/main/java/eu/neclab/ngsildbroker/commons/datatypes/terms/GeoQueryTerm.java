@@ -391,7 +391,7 @@ public class GeoQueryTerm implements Serializable {
 			throw new ResponseException(ErrorType.InvalidRequest,
 					"Unfortunatley the temporal api can only support geoqueries on the location field");
 		} else {
-			dbColumn = "location";
+			dbColumn = "teai_geo.location";
 		}
 
 		String safeGeometry = geometry != null ? geometry.replace("'", "''") : "";

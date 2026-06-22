@@ -584,6 +584,74 @@ public final class HttpUtils {
 				});
 	}
 
+	// ponytail: NGSI-LD 6.3.10 temporal pagination. Non-aggregated temporal
+	// retrieval/query MUST answer 206 + Content-Range: date-time <start>-<end>/<size>.
+	// start/end = min/max of the time-property across returned instances (reversed
+	// when lastN/DESC); size = the lastN/firstN cap, else '*'.
+	private static void collectTemporalTimestamps(Object node, String timeProp, List<String> out) {
+		if (node instanceof Map<?, ?> map) {
+			Object tv = map.get(timeProp);
+			if (tv instanceof List<?> tl) {
+				for (Object e : tl) {
+					if (e instanceof Map<?, ?> em && em.get(NGSIConstants.JSON_LD_VALUE) instanceof String vs) {
+						out.add(vs);
+					}
+				}
+			}
+			for (Object v : map.values()) {
+				collectTemporalTimestamps(v, timeProp, out);
+			}
+		} else if (node instanceof List<?> list) {
+			for (Object e : list) {
+				collectTemporalTimestamps(e, timeProp, out);
+			}
+		}
+	}
+
+	public static String temporalContentRange(Object entity, String timePropExpanded, boolean descending, int n) {
+		List<String> ts = new ArrayList<>();
+		collectTemporalTimestamps(entity, timePropExpanded, ts);
+		if (ts.isEmpty()) {
+			return null;
+		}
+		// ponytail: ETSI fixtures use uniform ISO-8601 UTC ('...Z'), which sorts lexically.
+		java.util.Collections.sort(ts);
+		String min = ts.get(0), max = ts.get(ts.size() - 1);
+		String size = n > 0 ? String.valueOf(n) : "*";
+		return "date-time " + (descending ? max : min) + "-" + (descending ? min : max) + "/" + size;
+	}
+
+	public static String expandTimeProperty(String shortProp) {
+		if (shortProp == null) {
+			return NGSIConstants.NGSI_LD_OBSERVED_AT;
+		}
+		switch (shortProp) {
+			case NGSIConstants.QUERY_PARAMETER_CREATED_AT:
+				return NGSIConstants.NGSI_LD_CREATED_AT;
+			case NGSIConstants.QUERY_PARAMETER_MODIFIED_AT:
+				return NGSIConstants.NGSI_LD_MODIFIED_AT;
+			case NGSIConstants.QUERY_PARAMETER_DELETED_AT:
+				return NGSIConstants.NGSI_LD_DELETED_AT;
+			default:
+				return NGSIConstants.NGSI_LD_OBSERVED_AT;
+		}
+	}
+
+	public static RestResponse<Object> toPartialContent(RestResponse<Object> resp, String contentRange) {
+		if (contentRange == null) {
+			return resp;
+		}
+		ResponseBuilder<Object> b = RestResponseBuilderImpl.create(206);
+		resp.getHeaders().forEach((k, vlist) -> {
+			for (Object v : vlist) {
+				b.header(k, v);
+			}
+		});
+		b.header("Content-Range", contentRange);
+		b.entity(resp.getEntity());
+		return b.build();
+	}
+
 	public static void makeConcise(Object compacted) {
 		makeConcise(compacted, null, null);
 	}
@@ -788,13 +856,20 @@ public final class HttpUtils {
 				}
 				Object valueObj = entityMap.get(key);
 				if (valueObj instanceof List<?> l) {
-
-					String type = null;
-					List<List<Object>> valuesWithDate = new ArrayList<>(l.size());
+					Map<String, List<Object>> datasetIdToValues = new java.util.LinkedHashMap<>();
+					Map<String, String> datasetIdToType = new java.util.HashMap<>();
+					
 					for (Object obj : l) {
 						if (obj instanceof Map<?, ?> m) {
-							type = (String) m.get(NGSIConstants.TYPE);
-
+							String type = (String) m.get(NGSIConstants.TYPE);
+							String datasetId = null;
+							if (m.containsKey(NGSIConstants.QUERY_PARAMETER_DATA_SET_ID)) {
+								datasetId = (String) m.get(NGSIConstants.QUERY_PARAMETER_DATA_SET_ID);
+							}
+							if (datasetId == null) {
+								datasetId = "@none";
+							}
+							
 							String date;
 							if (m.containsKey(NGSIConstants.QUERY_PARAMETER_OBSERVED_AT)) {
 								date = (String) m.get(NGSIConstants.QUERY_PARAMETER_OBSERVED_AT);
@@ -850,47 +925,61 @@ public final class HttpUtils {
 								if (date != null) {
 									valueEntry.add(date);
 								}
-								valuesWithDate.add(valueEntry);
+								datasetIdToValues.computeIfAbsent(datasetId, k -> new ArrayList<>()).add(valueEntry);
+								datasetIdToType.put(datasetId, type);
 							}
 						}
 					}
-					if (!valuesWithDate.isEmpty() && type != null) {
-						Map<String, Object> tmp = Maps.newLinkedHashMap();
-						tmp.put(NGSIConstants.TYPE, type);
-						switch (type) {
-							case NGSIConstants.PROPERTY: {
-								tmp.put(NGSIConstants.VALUES, valuesWithDate);
-								entityMap.put(key, tmp);
-								break;
+					if (!datasetIdToValues.isEmpty()) {
+						List<Map<String, Object>> resultList = new ArrayList<>(datasetIdToValues.size());
+						for (Map.Entry<String, List<Object>> entry : datasetIdToValues.entrySet()) {
+							String datasetId = entry.getKey();
+							String type = datasetIdToType.get(datasetId);
+							Map<String, Object> tmp = Maps.newLinkedHashMap();
+							tmp.put(NGSIConstants.TYPE, type);
+							if (!"@none".equals(datasetId)) {
+								tmp.put(NGSIConstants.QUERY_PARAMETER_DATA_SET_ID, datasetId);
 							}
-							case NGSIConstants.RELATIONSHIP: {
-								tmp.put(NGSIConstants.OBJECTS, valuesWithDate);
-								break;
+							switch (type) {
+								case NGSIConstants.PROPERTY: {
+									tmp.put(NGSIConstants.VALUES, entry.getValue());
+									break;
+								}
+								case NGSIConstants.RELATIONSHIP: {
+									tmp.put(NGSIConstants.OBJECTS, entry.getValue());
+									break;
+								}
+								case NGSIConstants.LISTPROPERTY: {
+									tmp.put(NGSIConstants.VALUELISTS, entry.getValue());
+									break;
+								}
+								case NGSIConstants.LISTRELATIONSHIP: {
+									tmp.put(NGSIConstants.OBJECTSLISTS, entry.getValue());
+									break;
+								}
+								case NGSIConstants.GEOPROPERTY: {
+									tmp.put(NGSIConstants.VALUES, entry.getValue());
+									break;
+								}
+								case NGSIConstants.LANGUAGE_PROPERTY: {
+									tmp.put(NGSIConstants.LANGUAGEMAPS, entry.getValue());
+									break;
+								}
+								case NGSIConstants.VOCAB_PROPERTY: {
+									tmp.put(NGSIConstants.VOCABS, entry.getValue());
+									break;
+								}
+								case NGSIConstants.JSONPROPERTY: {
+									tmp.put(NGSIConstants.JSONS, entry.getValue());
+									break;
+								}
 							}
-							case NGSIConstants.LISTPROPERTY: {
-								tmp.put(NGSIConstants.VALUELISTS, valuesWithDate);
-								break;
-							}
-							case NGSIConstants.LISTRELATIONSHIP: {
-								tmp.put(NGSIConstants.OBJECTSLISTS, valuesWithDate);
-								break;
-							}
-							case NGSIConstants.GEOPROPERTY: {
-								tmp.put(NGSIConstants.VALUES, valuesWithDate);
-								break;
-							}
-							case NGSIConstants.LANGUAGE_PROPERTY: {
-								tmp.put(NGSIConstants.LANGUAGEMAPS, valuesWithDate);
-								break;
-							}
-							case NGSIConstants.VOCAB_PROPERTY: {
-								tmp.put(NGSIConstants.VOCABS, valuesWithDate);
-								break;
-							}
-							case NGSIConstants.JSONPROPERTY: {
-								tmp.put(NGSIConstants.JSONS, valuesWithDate);
-								break;
-							}
+							resultList.add(tmp);
+						}
+						if (resultList.size() == 1) {
+							entityMap.put(key, resultList.get(0));
+						} else {
+							entityMap.put(key, resultList);
 						}
 					}
 				}

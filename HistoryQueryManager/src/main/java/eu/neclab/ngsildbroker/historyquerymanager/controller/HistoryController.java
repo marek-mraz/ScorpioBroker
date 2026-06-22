@@ -217,7 +217,11 @@ public class HistoryController {
 						return HttpUtils.generateQueryResult(request, queryResult, finalOptions, geoproperty,
 								acceptHeader, count, actualLimit, languageQueryTerm, context, ldService, true, true,
 								false, microServiceUtils.getGatewayString(),
-								NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType);
+								NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType)
+								.onItem().transform(resp -> HttpUtils.toPartialContent(resp,
+										aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(),
+												HttpUtils.expandTimeProperty(temporalQueryTerm == null ? null : temporalQueryTerm.getTimeProperty()),
+												"DESC".equals(nOrder), n) : null));
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 	}
@@ -310,14 +314,21 @@ public class HistoryController {
 							// aggregated temporal representation
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, false, true, -1);
-						} else if (temporalValues) {
+						}
+						// NGSI-LD 6.3.10: non-aggregated temporal retrieval -> 206 + Content-Range
+						String contentRange = HttpUtils.temporalContentRange(entity,
+								HttpUtils.expandTimeProperty(tempQuery == null ? null : tempQuery.getTimeProperty()),
+								"DESC".equals(nOrder), n);
+						if (temporalValues) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
-									geometryProperty, finalOptions, null, ldService, null, null, true, true, AppConstants.ENTITY_RETRIEVED_PAYLOAD);
+									geometryProperty, finalOptions, null, ldService, null, null, true, true, AppConstants.ENTITY_RETRIEVED_PAYLOAD)
+									.onItem().transform(resp -> HttpUtils.toPartialContent(resp, contentRange));
 						} else {
 							// ponytail: normalized temporal retrieval keeps attrs as instance arrays (NGSI-LD 4.5.6)
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, false, true,
-									AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD);
+									AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD)
+									.onItem().transform(resp -> HttpUtils.toPartialContent(resp, contentRange));
 						}
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));

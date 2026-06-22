@@ -52,7 +52,7 @@ public class HistoryDAO {
 
 	private static Logger logger = LoggerFactory.getLogger(HistoryDAO.class);
 
-	private final String TIMESTAMP_FORMAT = "'YYYY-MM-DDThh24:MI:SS.usZ'";
+	private final String TIMESTAMP_FORMAT = "'YYYY-MM-DDThh24:MI:SSZ'";
 
 	@Inject
 	ConnectionManager connectionManager;
@@ -89,7 +89,7 @@ public class HistoryDAO {
 		// ei.id, ei.createdat, ei.e_types, ei.modifiedat, ei.deletedat, ei.scopes,
 		// teai.attributeid, (array_agg(teai.data ORDER BY teai.
 		sql.append(
-				", aggr as (SELECT ID, createdat, e_types, modifiedat, deletedat, scopes, attributeid, ATTRTYPE, PRSTART, PRSTOP, ");
+				", aggr as (SELECT ID, createdat, e_types, modifiedat, deletedat, scopes, attributeid, ATTRTYPE, PRSTART, PRSTOP, data #>> '{" + NGSIConstants.NGSI_LD_DATA_SET_ID + ",0,@id}' as DATASETID, ");
 		for (String aggrFunction : aggrQuery.getAggrFunctions()) {
 			sql.append("JSONB_BUILD_OBJECT('" + NGSIConstants.JSON_LD_LIST + "', JSONB_BUILD_ARRAY(JSONB_BUILD_OBJECT('"
 					+ NGSIConstants.JSON_LD_VALUE + "', ");
@@ -315,7 +315,7 @@ public class HistoryDAO {
 		if (aggrQuery.getPeriod() != null) {
 			sql.append(" AND PR IS NOT NULL");
 		}
-		sql.append(" GROUP BY ID, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, ATTRIBUTEID,");
+		sql.append(" GROUP BY ID, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, ATTRIBUTEID, DATASETID,");
 		if (aggrQuery.getPeriod() != null) {
 			sql.append(" PR,");
 		}
@@ -348,7 +348,7 @@ public class HistoryDAO {
 		}
 		sql.append("), ");
 		sql.append(
-				"attribute_arrays as (SELECT id, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, attributeid, jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('@type', jsonb_build_array(ATTRTYPE),");
+				"attribute_arrays as (SELECT id, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, attributeid, jsonb_strip_nulls(jsonb_build_object('@type', jsonb_build_array(ATTRTYPE), '" + NGSIConstants.NGSI_LD_DATA_SET_ID + "', CASE WHEN DATASETID IS NOT NULL THEN jsonb_build_array(jsonb_build_object('@id', DATASETID)) ELSE NULL END, ");
 		for (String aggrFunction : aggrQuery.getAggrFunctions()) {
 			switch (aggrFunction) {
 				case NGSIConstants.AGGR_METH_SUM:
@@ -446,7 +446,7 @@ public class HistoryDAO {
 		}
 		sql.setLength(sql.length() - 1);
 		sql.append(
-				"))) as data_array, ATTRTYPE FROM aggr X GROUP BY id, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, attributeid, ATTRTYPE)");
+				")) as data_array, ATTRTYPE FROM aggr X GROUP BY id, SCOPES, E_TYPES, CREATEDAT, MODIFIEDAT, DELETEDAT, attributeid, DATASETID, ATTRTYPE)");
 		return dollarCount;
 	}
 
@@ -502,9 +502,9 @@ public class HistoryDAO {
 		if (windowFunction) {
 			sql.append("WITH RECURSIVE result_builder AS (( ");
 		}
-		dollar = addEntityInfoPart(sql, tuple, dollar, idsAndTypeAndIdPattern, scopeQuery, limit, offset, false);
+		dollar = addEntityInfoPart(sql, tuple, dollar, idsAndTypeAndIdPattern, scopeQuery, geoQuery, limit, offset, false);
 		try {
-			dollar = addAttributesPart(sql, tuple, dollar, tempQuery, attrsQuery, qQuery, geoQuery, dataSetIdTerm,
+			dollar = addAttributesPart(sql, tuple, dollar, tempQuery, attrsQuery, qQuery, dataSetIdTerm,
 					pickTerm, omitTerm, timeProp, n, offsetN, nOrder, aggrQuery);
 		} catch (ResponseException e) {
 			return Uni.createFrom().failure(e);
@@ -548,9 +548,9 @@ public class HistoryDAO {
 							  FROM previous_results
 							),
 																		""");
-			dollar = addEntityInfoPart(sql, tuple, dollar, idsAndTypeAndIdPattern, scopeQuery, limit, 0, true);
+			dollar = addEntityInfoPart(sql, tuple, dollar, idsAndTypeAndIdPattern, scopeQuery, geoQuery, limit, 0, true);
 			try {
-				dollar = addAttributesPart(sql, tuple, dollar, tempQuery, attrsQuery, qQuery, geoQuery,
+				dollar = addAttributesPart(sql, tuple, dollar, tempQuery, attrsQuery, qQuery,
 						dataSetIdTerm, pickTerm, omitTerm, timeProp, n, offsetN, nOrder, aggrQuery);
 			} catch (ResponseException e) {
 				return Uni.createFrom().failure(e);
@@ -633,16 +633,19 @@ public class HistoryDAO {
 								entity.put(attribId, attribData.get(i));
 								continue;
 							}
-							List<Map<String, List<Map<String, List>>>> attribEntry = (List<Map<String, List<Map<String, List>>>>) attribData
-									.get(i);
-							if (attribEntry.get(0).size() == 1) {
+							Map<String, Object> attribEntry = (Map<String, Object>) attribData.get(i);
+							if (attribEntry.size() == 1) { // only @type
 								continue;
 							}
 							if ((aggrQuery.getAggrFunctions().contains(NGSIConstants.AGGR_METH_MAX)
 									|| aggrQuery.getAggrFunctions().contains(NGSIConstants.AGGR_METH_MIN))) {
 								postProcessMinOrMaxResults(attribEntry);
 							}
-							entity.put(attribId, attribEntry);
+							if (!entity.containsKey(attribId)) {
+								entity.put(attribId, Lists.newArrayList(attribEntry));
+							} else {
+								((List<Object>) entity.get(attribId)).add(attribEntry);
+							}
 						}
 					}
 
@@ -694,11 +697,11 @@ public class HistoryDAO {
 		sql.append(
 				" SELECT id, e_types, createdat, modifiedat, deletedAt, scopes, array_agg(attributeid) FILTER (WHERE data_array IS NOT NULL");
 		if (aggrTerm != null) {
-			sql.append(" AND data_array != '[{}]'::jsonb");
+			sql.append(" AND data_array != '{}'::jsonb");
 		}
 		sql.append(") as attribute_ids, jsonb_agg(data_array) FILTER (WHERE data_array IS NOT NULL");
 		if (aggrTerm != null) {
-			sql.append(" AND data_array != '[{}]'::jsonb");
+			sql.append(" AND data_array != '{}'::jsonb");
 		}
 		sql.append(
 				") as attribute_data_arrays FROM attribute_arrays GROUP BY id, createdat, e_types, createdat, modifiedat, deletedat, scopes");
@@ -714,7 +717,7 @@ public class HistoryDAO {
 	}
 
 	private int addAttributesPart(StringBuilder sql, Tuple tuple, int dollar, TemporalQueryTerm tempQuery,
-			AttrsQueryTerm attrsQuery, QQueryTerm qQuery, GeoQueryTerm geoQuery, DataSetIdTerm dataSetIdTerm,
+			AttrsQueryTerm attrsQuery, QQueryTerm qQuery, DataSetIdTerm dataSetIdTerm,
 			PickTerm pickTerm, OmitTerm omitTerm, String timeProp, int n, int offsetN, String nOrder, AggrTerm aggrTerm)
 			throws ResponseException {
 		if (aggrTerm != null) {
@@ -754,10 +757,6 @@ public class HistoryDAO {
 			dollar = tempQuery.toSql(sql, tuple, dollar);
 			sql.append(" AND ");
 		}
-		if (geoQuery != null) {
-			dollar = geoQuery.toTempSql(sql, tuple, dollar);
-			sql.append(" AND ");
-		}
 		if (dataSetIdTerm != null) {
 			dollar = dataSetIdTerm.toTempSql(sql, tuple, dollar);
 			sql.append(" AND ");
@@ -771,7 +770,7 @@ public class HistoryDAO {
 	}
 
 	private int addEntityInfoPart(StringBuilder sql, Tuple tuple, int dollar,
-			List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypeAndIdPattern, ScopeQueryTerm scopeQuery, int limit,
+			List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypeAndIdPattern, ScopeQueryTerm scopeQuery, GeoQueryTerm geoQuery, int limit,
 			int offset, boolean windowFunction) {
 		if (!windowFunction) {
 			sql.append("WITH ");
@@ -825,7 +824,22 @@ public class HistoryDAO {
 		}
 
 		if (scopeQuery != null) {
+			if (idsAndTypeAndIdPattern != null && !idsAndTypeAndIdPattern.isEmpty()) {
+				sql.append(" AND ");
+			}
 			scopeQuery.toSql(sql);
+		}
+		if (geoQuery != null) {
+			if ((idsAndTypeAndIdPattern != null && !idsAndTypeAndIdPattern.isEmpty()) || scopeQuery != null) {
+				sql.append(" AND ");
+			}
+			sql.append("EXISTS (SELECT 1 FROM temporalentityattrinstance teai_geo WHERE teai_geo.temporalentity_id = id AND teai_geo.location IS NOT NULL AND ");
+			try {
+				dollar = geoQuery.toTempSql(sql, tuple, dollar);
+			} catch (ResponseException e) {
+				throw new RuntimeException(e);
+			}
+			sql.append(")");
 		}
 		sql.append(" ORDER BY createdat DESC, id ASC OFFSET ");
 		sql.append(offset);
@@ -846,40 +860,43 @@ public class HistoryDAO {
 		return dollar;
 	}
 
-	private void postProcessMinOrMaxResults(List<Map<String, List<Map<String, List>>>> attribValue) {
-		for (Map<String, List<Map<String, List>>> listEntry : attribValue) {
-
-			List<Map<String, List>> maxes = listEntry.get(NGSIConstants.NGSI_LD_MAX);
-			if (maxes != null) {
-				for (Map<String, List> max : maxes) {
-					List<Map<String, List<Map<String, Object>>>> subMaxes = max
-							.get(JsonLdConsts.LIST);
-					for (Map<String, List<Map<String, Object>>> subMax : subMaxes) {
-						List<Map<String, Object>> realValues = subMax.get(JsonLdConsts.LIST);
-						String potentialValue = realValues.get(0).get(JsonLdConsts.VALUE)
-								.toString();
-						if (NumberUtils.isCreatable(potentialValue)) {
-							realValues.get(0).put(JsonLdConsts.VALUE,
-									NumberUtils.createNumber(potentialValue));
+	private void postProcessMinOrMaxResults(Map<String, Object> listEntry) {
+		List<Map<String, List>> maxes = (List<Map<String, List>>) listEntry.get(NGSIConstants.NGSI_LD_MAX);
+		if (maxes != null) {
+			for (Map<String, List> max : maxes) {
+				List<Map<String, Object>> subMaxes = (List<Map<String, Object>>) max.get(JsonLdConsts.LIST);
+				if (subMaxes != null) {
+					for (Map<String, Object> subMax : subMaxes) {
+						List<Map<String, Object>> realValues = (List<Map<String, Object>>) subMax.get(JsonLdConsts.LIST);
+						if (realValues != null && !realValues.isEmpty()) {
+							Object valObj = realValues.get(0).get(JsonLdConsts.VALUE);
+							if (valObj != null) {
+								String potentialValue = valObj.toString();
+								if (org.apache.commons.lang3.math.NumberUtils.isCreatable(potentialValue)) {
+									realValues.get(0).put(JsonLdConsts.VALUE, org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue));
+								}
+							}
 						}
-
 					}
 				}
 			}
-			List<Map<String, List>> mins = listEntry.get(NGSIConstants.NGSI_LD_MIN);
-			if (mins != null) {
-				for (Map<String, List> min : mins) {
-					List<Map<String, List<Map<String, Object>>>> subMins = min
-							.get(JsonLdConsts.LIST);
-					for (Map<String, List<Map<String, Object>>> subMin : subMins) {
-						List<Map<String, Object>> realValues = subMin.get(JsonLdConsts.LIST);
-						String potentialValue = realValues.get(0).get(JsonLdConsts.VALUE)
-								.toString();
-						if (NumberUtils.isCreatable(potentialValue)) {
-							realValues.get(0).put(JsonLdConsts.VALUE,
-									NumberUtils.createNumber(potentialValue));
+		}
+		List<Map<String, List>> mins = (List<Map<String, List>>) listEntry.get(NGSIConstants.NGSI_LD_MIN);
+		if (mins != null) {
+			for (Map<String, List> min : mins) {
+				List<Map<String, Object>> subMins = (List<Map<String, Object>>) min.get(JsonLdConsts.LIST);
+				if (subMins != null) {
+					for (Map<String, Object> subMin : subMins) {
+						List<Map<String, Object>> realValues = (List<Map<String, Object>>) subMin.get(JsonLdConsts.LIST);
+						if (realValues != null && !realValues.isEmpty()) {
+							Object valObj = realValues.get(0).get(JsonLdConsts.VALUE);
+							if (valObj != null) {
+								String potentialValue = valObj.toString();
+								if (org.apache.commons.lang3.math.NumberUtils.isCreatable(potentialValue)) {
+									realValues.get(0).put(JsonLdConsts.VALUE, org.apache.commons.lang3.math.NumberUtils.createNumber(potentialValue));
+								}
+							}
 						}
-
 					}
 				}
 			}
