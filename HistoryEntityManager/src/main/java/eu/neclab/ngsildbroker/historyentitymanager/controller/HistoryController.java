@@ -22,6 +22,8 @@ import org.jboss.resteasy.reactive.RestResponse;
 import com.github.jsonldjava.core.JsonLDService;
 
 import eu.neclab.ngsildbroker.commons.constants.AppConstants;
+import eu.neclab.ngsildbroker.commons.enums.ErrorType;
+import eu.neclab.ngsildbroker.commons.exceptions.ResponseException;
 import eu.neclab.ngsildbroker.commons.tools.HttpUtils;
 import eu.neclab.ngsildbroker.historyentitymanager.service.HistoryEntityService;
 import io.smallrye.mutiny.Uni;
@@ -192,5 +194,39 @@ public class HistoryController {
 						return HttpUtils.generateDeleteResult(opResult);
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
+	}
+
+	// Missing entity id (e.g. POST/DELETE/PATCH /temporal/entities//attrs...): the empty
+	// path segment collapses to /temporal/entities/attrs..., so add explicit handlers that
+	// return 400 instead of the routing default 405. NGSI-LD requires Entity Id.
+	private Uni<RestResponse<Object>> missingId(HttpServerRequest request) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+				new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(request)));
+	}
+
+	@POST
+	@Path("/attrs")
+	public Uni<RestResponse<Object>> addAttribMissingId(HttpServerRequest request, String body) {
+		return missingId(request);
+	}
+
+	@DELETE
+	@Path("/attrs/{attrId}")
+	public Uni<RestResponse<Object>> deleteAttribMissingId(HttpServerRequest request, @PathParam("attrId") String attrId) {
+		return missingId(request);
+	}
+
+	@PATCH
+	@Path("/attrs/{attrId}/{instanceId}")
+	public Uni<RestResponse<Object>> modifyInstanceMissingId(HttpServerRequest request,
+			@PathParam("attrId") String attrId, @PathParam("instanceId") String instanceId, String body) {
+		return missingId(request);
+	}
+
+	@DELETE
+	@Path("/attrs/{attrId}/{instanceId}")
+	public Uni<RestResponse<Object>> deleteInstanceMissingId(HttpServerRequest request,
+			@PathParam("attrId") String attrId, @PathParam("instanceId") String instanceId) {
+		return missingId(request);
 	}
 }

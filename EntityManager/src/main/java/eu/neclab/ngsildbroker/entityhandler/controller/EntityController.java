@@ -189,6 +189,12 @@ public class EntityController {// implements EntityHandlerInterface {
 		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(req)));
 	}
 
+	@PATCH
+	@Path("/entities/attrs")
+	public Uni<RestResponse<Object>> updateAttribsMissingId(HttpServerRequest req) {
+		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Entity Id is required"), HttpUtils.getTenant(req)));
+	}
+
 	@POST
 	@Path("/entities/{entityId}/attrs")
 	@Counted(name = "entity_update_total", description = "Total number of entity update requests", absolute = true)
