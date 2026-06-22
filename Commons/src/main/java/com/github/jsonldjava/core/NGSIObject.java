@@ -815,6 +815,9 @@ class NGSIObject {
 			switch (payloadType) {
 				case AppConstants.TEMP_ENTITY_RETRIEVED_PAYLOAD:
 				case AppConstants.TEMP_ENTITY_CREATE_PAYLOAD:
+				case AppConstants.TEMP_ENTITY_UPDATE_PAYLOAD:
+					// temporal attribute updates legitimately carry multiple instances
+					// over time without datasetId
 					break;
 				default:
 					throw new ResponseException(ErrorType.BadRequestData,
