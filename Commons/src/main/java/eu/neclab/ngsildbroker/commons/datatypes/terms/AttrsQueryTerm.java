@@ -177,15 +177,18 @@ public class AttrsQueryTerm implements Serializable {
 				tuple.addString(attrs);
 				dollar++;
 				query.append(") as val where ");
-				if (datasetIdTerm.ids.remove(NGSIConstants.JSON_LD_NONE)) {
+				boolean hasNone = datasetIdTerm.ids.contains(NGSIConstants.JSON_LD_NONE);
+				List<String> realIds = new ArrayList<>(datasetIdTerm.ids);
+				realIds.remove(NGSIConstants.JSON_LD_NONE);
+				if (hasNone) {
 					query.append("NOT val ? '");
 					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
 					query.append("'");
-					if (!datasetIdTerm.ids.isEmpty()) {
+					if (!realIds.isEmpty()) {
 						query.append(" OR ");
 					}
 				}
-				if (!datasetIdTerm.ids.isEmpty()) {
+				if (!realIds.isEmpty()) {
 					query.append("val ? '");
 					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
 					query.append("' and val #>> '{");
@@ -195,7 +198,7 @@ public class AttrsQueryTerm implements Serializable {
 					query.append("}' = ANY($");
 					query.append(dollar);
 					query.append(")");
-					tuple.addArrayOfString(datasetIdTerm.ids.toArray(new String[0]));
+					tuple.addArrayOfString(realIds.toArray(new String[0]));
 					dollar++;
 				}
 				query.append(") as filtered)");
@@ -301,7 +304,10 @@ public class AttrsQueryTerm implements Serializable {
 				tuple.addString(attrs);
 				dollar++;
 
-				if (datasetIdTerm.ids.remove(NGSIConstants.JSON_LD_NONE)) {
+				boolean hasNone = datasetIdTerm.ids.contains(NGSIConstants.JSON_LD_NONE);
+				List<String> realIds = new ArrayList<>(datasetIdTerm.ids);
+				realIds.remove(NGSIConstants.JSON_LD_NONE);
+				if (hasNone) {
 					query.append("NOT val ? '");
 					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
 					query.append("'");
@@ -310,12 +316,12 @@ public class AttrsQueryTerm implements Serializable {
 					followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
 					followUp.append("''");
 
-					if (!datasetIdTerm.ids.isEmpty()) {
+					if (!realIds.isEmpty()) {
 						query.append(" OR ");
 						followUp.append(" OR ");
 					}
 				}
-				if (!datasetIdTerm.ids.isEmpty()) {
+				if (!realIds.isEmpty()) {
 					query.append("val ? '");
 					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
 					query.append("' and val #>> '{");
@@ -332,7 +338,7 @@ public class AttrsQueryTerm implements Serializable {
 					followUp.append(NGSIConstants.JSON_LD_ID);
 					followUp.append("}'' = ANY(ARRAY[''' || ");
 
-					for (String id : datasetIdTerm.ids) {
+					for (String id : realIds) {
 						followUp.append('$');
 						followUp.append(dollar);
 						followUp.append(" || ''',''' || ");

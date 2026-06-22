@@ -1,5 +1,6 @@
 package eu.neclab.ngsildbroker.commons.datatypes.terms;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -72,27 +73,30 @@ public class OmitTerm extends ProjectionTerm {
 			query.append(tableToUse);
 			query.append(".VALUE ");
 			query.append(") as val where ");
-			if (dataSetIdTerm.ids.remove(NGSIConstants.JSON_LD_NONE)) {
-				query.append("NOT val ? '");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append("'");
-				if (!dataSetIdTerm.ids.isEmpty()) {
-					query.append(" OR ");
+			boolean hasNone = dataSetIdTerm.ids.contains(NGSIConstants.JSON_LD_NONE);
+				List<String> realIds = new ArrayList<>(dataSetIdTerm.ids);
+				realIds.remove(NGSIConstants.JSON_LD_NONE);
+				if (hasNone) {
+					query.append("NOT val ? '");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append("'");
+					if (!realIds.isEmpty()) {
+						query.append(" OR ");
+					}
 				}
-			}
-			if (!dataSetIdTerm.ids.isEmpty()) {
-				query.append("val ? '");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append("' and val #>> '{");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append(",0,");
-				query.append(NGSIConstants.JSON_LD_ID);
-				query.append("}' = ANY($");
-				query.append(dollar);
-				query.append(")");
-				tuple.addArrayOfString(dataSetIdTerm.ids.toArray(new String[0]));
-				dollar++;
-			}
+				if (!realIds.isEmpty()) {
+					query.append("val ? '");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append("' and val #>> '{");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append(",0,");
+					query.append(NGSIConstants.JSON_LD_ID);
+					query.append("}' = ANY($");
+					query.append(dollar);
+					query.append(")");
+					tuple.addArrayOfString(realIds.toArray(new String[0]));
+					dollar++;
+				}
 			query.append(") as filtered)");
 
 		}
@@ -174,52 +178,55 @@ public class OmitTerm extends ProjectionTerm {
 			followUp.append(".VALUE ");
 			followUp.append(") as val where ");
 
-			if (dataSetIdTerm.ids.remove(NGSIConstants.JSON_LD_NONE)) {
-				query.append("NOT val ? '");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append("'");
+			boolean hasNone = dataSetIdTerm.ids.contains(NGSIConstants.JSON_LD_NONE);
+				List<String> realIds = new ArrayList<>(dataSetIdTerm.ids);
+				realIds.remove(NGSIConstants.JSON_LD_NONE);
+				if (hasNone) {
+					query.append("NOT val ? '");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append("'");
 
-				followUp.append("NOT val ? ''");
-				followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				followUp.append("''");
-				if (!dataSetIdTerm.ids.isEmpty()) {
-					query.append(" OR ");
-					followUp.append(" OR ");
+					followUp.append("NOT val ? ''");
+					followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					followUp.append("''");
+					if (!realIds.isEmpty()) {
+						query.append(" OR ");
+						followUp.append(" OR ");
+					}
 				}
-			}
-			if (!dataSetIdTerm.ids.isEmpty()) {
-				query.append("val ? '");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append("' and val #>> '{");
-				query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				query.append(",0,");
-				query.append(NGSIConstants.JSON_LD_ID);
-				query.append("}' = ANY(ARRAY[");
+				if (!realIds.isEmpty()) {
+					query.append("val ? '");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append("' and val #>> '{");
+					query.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					query.append(",0,");
+					query.append(NGSIConstants.JSON_LD_ID);
+					query.append("}' = ANY(ARRAY[");
 
-				followUp.append("val ? ''");
-				followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				followUp.append("'' and val #>> ''{");
-				followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
-				followUp.append(",0,");
-				followUp.append(NGSIConstants.JSON_LD_ID);
-				followUp.append("}'' = ANY(ARRAY[''' || ");
-				for (String attr : dataSetIdTerm.ids) {
-					query.append('$');
-					query.append(dollar);
-					query.append(',');
-					followUp.append('$');
-					followUp.append(dollar);
-					followUp.append(" || ''',''' || ");
-					dollar++;
-					tuple.addString(attr);
+					followUp.append("val ? ''");
+					followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					followUp.append("'' and val #>> ''{");
+					followUp.append(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					followUp.append(",0,");
+					followUp.append(NGSIConstants.JSON_LD_ID);
+					followUp.append("}'' = ANY(ARRAY[''' || ");
+					for (String attr : realIds) {
+						query.append('$');
+						query.append(dollar);
+						query.append(',');
+						followUp.append('$');
+						followUp.append(dollar);
+						followUp.append(" || ''',''' || ");
+						dollar++;
+						tuple.addString(attr);
+					}
+					query.setLength(query.length() - 1);
+					query.append("])");
+
+					followUp.setLength(followUp.length() - 8);
+					followUp.append("])");
+
 				}
-				query.setLength(query.length() - 1);
-				query.append("])");
-
-				followUp.setLength(followUp.length() - 8);
-				followUp.append("])");
-
-			}
 			query.append(") as filtered)");
 			followUp.append(") as filtered)");
 
