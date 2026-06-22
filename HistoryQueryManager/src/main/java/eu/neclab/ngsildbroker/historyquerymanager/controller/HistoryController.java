@@ -89,10 +89,21 @@ public class HistoryController {
 			@QueryParam("n") @DefaultValue("-1") int nInput,
 			@QueryParam("offsetN") @DefaultValue("0") int offsetN,
 			@QueryParam("orderN") @DefaultValue("ASC") String nOrderInput,
-			@QueryParam("firstN") @DefaultValue("-1") int firstN) {
+			@QueryParam("firstN") @DefaultValue("-1") int firstN, @QueryParam("local") String localS,
+			@QueryParam("pick") String pick, @QueryParam("omit") String omit) {
 		boolean localOnly;
 		boolean count;
 		String tenant = HttpUtils.getTenant(request);
+		// NGSI-LD: spec param is "local"; keep "localOnly" for backward compat
+		if (localS != null) {
+			localOnlyS = localS;
+		}
+		// pick, omit and attrs are mutually exclusive (NGSI-LD 4.21)
+		if ((pick != null && omit != null) || (pick != null && attrs != null) || (attrs != null && omit != null)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "Omit, pick and attrs are mutually exclusive"),
+					tenant));
+		}
 
 		if ((nInput != -1 && lastN != -1 && lastN != nInput) || (nInput != -1 && firstN != -1 && firstN != nInput)
 				|| (firstN != -1 && lastN != -1)) {
@@ -121,7 +132,7 @@ public class HistoryController {
 		}
 		int acceptHeader = HttpUtils.parseAcceptHeader(request.headers().getAll("Accept"));
 		if (format != null && !format.isEmpty()) {
-			options += "," + format;
+			options = (options == null || options.isEmpty()) ? format : options + "," + format;
 		}
 		String q;
 		if (qInput != null) {
@@ -226,8 +237,15 @@ public class HistoryController {
 			@QueryParam("format") String format, @QueryParam("n") @DefaultValue("-1") int nInput,
 			@QueryParam("offsetN") @DefaultValue("0") int offsetN,
 			@QueryParam("orderN") @DefaultValue("ASC") String nOrderInput,
-			@QueryParam("firstN") @DefaultValue("-1") int firstN) {
+			@QueryParam("firstN") @DefaultValue("-1") int firstN, @QueryParam("pick") String pick,
+			@QueryParam("omit") String omit) {
 		boolean localOnly;
+		// pick, omit and attrs are mutually exclusive (NGSI-LD 4.21)
+		if ((pick != null && omit != null) || (pick != null && attrs != null) || (attrs != null && omit != null)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "Omit, pick and attrs are mutually exclusive"),
+					HttpUtils.getTenant(request)));
+		}
 		try {
 			localOnly = HttpUtils.parseBoolean(localOnlyS);
 		} catch (ResponseException e) {
@@ -235,7 +253,7 @@ public class HistoryController {
 		}
 		int acceptHeader = HttpUtils.parseAcceptHeader(request.headers().getAll("Accept"));
 		if (format != null && !format.isEmpty()) {
-			optionsString += "," + format;
+			optionsString = (optionsString == null || optionsString.isEmpty()) ? format : optionsString + "," + format;
 		}
 		if (acceptHeader != 1 && acceptHeader != 2) {
 			return HttpUtils.getInvalidHeader();

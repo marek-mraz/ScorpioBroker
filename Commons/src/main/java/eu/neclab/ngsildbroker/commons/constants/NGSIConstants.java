@@ -564,6 +564,8 @@ public interface NGSIConstants {
 	public static final String SUBSCRIPTION_NO_LONGER_MATCHING = "noLongerMatching";
 	public static final String NGSI_LD_PICK = "https://uri.etsi.org/ngsi-ld/pick";
 	public static final String NGSI_LD_OMIT = "https://uri.etsi.org/ngsi-ld/omit";
+	public static final String NGSI_LD_JOIN = "https://uri.etsi.org/ngsi-ld/join";
+	public static final String NGSI_LD_JOIN_LEVEL = "https://uri.etsi.org/ngsi-ld/hasJoinLevel";
 	public static final String NGSI_LD_JSON_KEYS = "https://uri.etsi.org/ngsi-ld/jsonKeys";
 	public static final String QUERY_PARAMETER_DO_NOT_COMPACT = "doNotCompact";
 	public static final String NGSI_LD_NOTIFICATION_TRIGGER_SHORT = "notificationTrigger";

@@ -255,7 +255,29 @@ public class EntityInfoDAO {
 			payloads.add(objPayload);
 		}
 		((Map<String, Object>) payloads.get(0)).remove(NGSIConstants.NGSI_LD_CREATED_AT);
-		tuple = Tuple.of(request.getAttribName(), new JsonArray(payloads), request.getFirstId());
+		// target instance datasetId (null => default instance); partial update must only
+		// touch an EXISTING instance, else 404 (NGSI-LD 5.6.4) instead of appending.
+		String targetDatasetId = null;
+		Object dsId = ((Map<String, Object>) payloads.get(0)).get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		Map<String, Object> dsMap = null;
+		if (dsId instanceof List<?> dsList && !dsList.isEmpty() && dsList.get(0) instanceof Map) {
+			dsMap = (Map<String, Object>) dsList.get(0);
+		} else if (dsId instanceof Map) {
+			dsMap = (Map<String, Object>) dsId;
+		}
+		if (dsMap != null) {
+			Object id = dsMap.get(JsonLdConsts.ID);
+			if (id == null) {
+				// datasetId in a partial-update fragment can expand to a Property node
+				// {@type:Property, hasValue:[{@value:<id>}]} instead of {@id:<id>}
+				Object hv = dsMap.get(NGSIConstants.NGSI_LD_HAS_VALUE);
+				if (hv instanceof List<?> hvList && !hvList.isEmpty() && hvList.get(0) instanceof Map) {
+					id = ((Map<String, Object>) hvList.get(0)).get(JsonLdConsts.VALUE);
+				}
+			}
+			targetDatasetId = id == null ? null : id.toString();
+		}
+		tuple = Tuple.of(request.getAttribName(), new JsonArray(payloads), request.getFirstId(), targetDatasetId);
 		String sql = """
 				WITH old_entity AS (
 				    SELECT ENTITY
@@ -264,7 +286,10 @@ public class EntityInfoDAO {
 				)
 				UPDATE ENTITY
 				SET ENTITY = NGSILD_PARTIALUPDATE(ENTITY, $1, $2)
-				WHERE id = $3 AND ENTITY ? $1
+				WHERE id = $3 AND ENTITY ? $1 AND EXISTS (
+				    SELECT 1 FROM jsonb_array_elements(ENTITY->$1) elem
+				    WHERE (elem #>> '{https://uri.etsi.org/ngsi-ld/datasetId,0,@id}') IS NOT DISTINCT FROM $4::text
+				)
 				RETURNING (SELECT ENTITY FROM old_entity) AS old_entry;
 				""";
 		return connectionManager.executeQuery(request.getTenant(), sql, tuple, false).onItem().transformToUni(rows -> {
@@ -441,14 +466,11 @@ public class EntityInfoDAO {
 				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound));
 			}
 			Row first = rows.iterator().next();
-			if (noOverwrite) {
-				// TODO return the not added stuff from noOverwrite
-				return Uni.createFrom().item(Tuple3.of(first.getJsonObject(0).getMap(),
-						first.getJsonObject(1).getMap(), new HashSet<>(0)));
-			} else {
-				return Uni.createFrom().item(Tuple3.of(first.getJsonObject(0).getMap(),
-						first.getJsonObject(1).getMap(), new HashSet<>(0)));
-			}
+			// TODO noOverwrite: report skipped attributes as notUpdated (see error.md #12).
+			// Needs instance-level skip detection AND a {updated, notUpdated} body format
+			// with expanded names; the batch path is separate. Deferred.
+			return Uni.createFrom().item(Tuple3.of(first.getJsonObject(0).getMap(),
+					first.getJsonObject(1).getMap(), new HashSet<>(0)));
 		});
 
 	}

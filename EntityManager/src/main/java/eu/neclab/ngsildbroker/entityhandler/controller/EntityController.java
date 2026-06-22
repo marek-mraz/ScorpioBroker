@@ -548,6 +548,11 @@ public class EntityController {// implements EntityHandlerInterface {
 		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrId)) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Cannot replace base property"), HttpUtils.getTenant(request)));
 		}
+		// attribute names starting with @ are JSON-LD keywords, never valid attribute names
+		if (attrId == null || attrId.startsWith("@")) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "Invalid attribute name"), HttpUtils.getTenant(request)));
+		}
 
 		try {
 			HttpUtils.validateUri(entityId);

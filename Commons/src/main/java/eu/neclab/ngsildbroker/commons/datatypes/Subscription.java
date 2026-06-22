@@ -519,6 +519,14 @@ public class Subscription implements Serializable {
 					notifyParam.setTimesSent(
 							((List<Map<String, Integer>>) entry.getValue()).get(0).get(NGSIConstants.JSON_LD_VALUE));
 					break;
+				case NGSIConstants.NGSI_LD_JOIN:
+					notifyParam.setJoin((String) ((List<Map<String, Object>>) entry.getValue()).get(0)
+							.get(NGSIConstants.JSON_LD_VALUE));
+					break;
+				case NGSIConstants.NGSI_LD_JOIN_LEVEL:
+					notifyParam.setJoinLevel(((Number) ((List<Map<String, Object>>) entry.getValue()).get(0)
+							.get(NGSIConstants.JSON_LD_VALUE)).intValue());
+					break;
 				case NGSIConstants.NGSI_LD_LAST_FAILURE:
 				case NGSIConstants.NGSI_LD_LAST_SUCCESS:
 				case NGSIConstants.NGSI_LD_LAST_NOTIFICATION:

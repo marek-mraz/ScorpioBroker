@@ -412,7 +412,7 @@ public class QueryParser {
 									+ NGSIConstants.QUERY_PARAMETER_ENDTIME);
 				}
 				if (timeAt == null) {
-					throw new ResponseException(ErrorType.InvalidRequest,
+					throw new ResponseException(ErrorType.BadRequestData,
 							NGSIConstants.TIME_REL_AFTER + " cannot be used without "
 									+ NGSIConstants.QUERY_PARAMETER_TIME);
 				}
@@ -428,7 +428,7 @@ public class QueryParser {
 							+ " cannot be used with " + NGSIConstants.QUERY_PARAMETER_ENDTIME);
 				}
 				if (timeAt == null) {
-					throw new ResponseException(ErrorType.InvalidRequest, NGSIConstants.TIME_REL_BEFORE
+					throw new ResponseException(ErrorType.BadRequestData, NGSIConstants.TIME_REL_BEFORE
 							+ " cannot be used without " + NGSIConstants.QUERY_PARAMETER_TIME);
 				}
 				try {
@@ -439,11 +439,11 @@ public class QueryParser {
 				break;
 			case NGSIConstants.TIME_REL_BETWEEN:
 				if (endTimeAt == null) {
-					throw new ResponseException(ErrorType.InvalidRequest, NGSIConstants.TIME_REL_BETWEEN
+					throw new ResponseException(ErrorType.BadRequestData, NGSIConstants.TIME_REL_BETWEEN
 							+ " cannot be used without " + NGSIConstants.QUERY_PARAMETER_ENDTIME);
 				}
 				if (timeAt == null) {
-					throw new ResponseException(ErrorType.InvalidRequest, NGSIConstants.TIME_REL_BETWEEN
+					throw new ResponseException(ErrorType.BadRequestData, NGSIConstants.TIME_REL_BETWEEN
 							+ " cannot be used without " + NGSIConstants.QUERY_PARAMETER_TIME);
 				}
 				try {
