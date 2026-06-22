@@ -1,0 +1,101 @@
+name: Build and ETSI Test (Serial)
+
+on:
+  workflow_dispatch: # Manual trigger only
+
+env:
+  PROFILE: kafka
+
+jobs:
+  build-and-test-serial:
+    name: Build & Run ETSI Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Build Application and Docker Image
+        run: |
+          # Builds the Scorpio runner with the Kafka profile
+          mvn clean package -DskipTests -P${{ env.PROFILE }} -D${{ env.PROFILE }} \
+            -Ddocker \
+            -Dquarkus.profile=${{ env.PROFILE }} \
+            -Ddocker-tag=java-${{ env.PROFILE }}-latest
+
+      - name: Build Test Dependencies
+        run: |
+          # Build the mock testserver required by compose files
+          cd testserver && docker build -t testserver .
+
+      - name: Start Environment (Docker Compose)
+        run: |
+          docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml up > dockerout.log 2>&1 &
+          echo "Waiting 120 seconds for Scorpio (Kafka, Postgres, Broker) to initialize..."
+          sleep 120
+
+      - name: Get ETSI Testsuite
+        run: git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+
+      - name: Configure ETSI Testsuite
+        run: |
+          cd ngsi-ld-test-suite/resources/
+          
+          # Scorpio runs in Docker, so the callback URLs (notification/context servers) 
+          # spawned by the testsuite on the runner host need to be reachable via host.docker.internal
+          cat <<EOF > variables.py.new
+          url = 'http://localhost:9090/ngsi-ld/v1'
+          temporal_api_url = 'http://localhost:9090/ngsi-ld/v1'
+          ngsild_test_suite_context = 'https://forge.etsi.org/rep/cim/ngsi-ld-test-suite/-/raw/develop/resources/jsonld-contexts/ngsi-ld-test-suite-compound.jsonld'
+          notification_server_host = 'host.docker.internal'
+          notification_server_port = 8085
+          context_source_host = 'host.docker.internal'
+          context_source_port = 8086
+          context_server_host = 'host.docker.internal'
+          context_server_port = 8087
+          EOF
+          
+          # Append the rest of the original configuration
+          tail -n +11 variables.py >> variables.py.new
+          mv variables.py.new variables.py
+
+      - name: Run ETSI Testsuite (Serially)
+        run: |
+          # Map host.docker.internal to localhost on the runner so the tests can bind properly
+          echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+          
+          cd ngsi-ld-test-suite
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq python3-virtualenv
+          virtualenv .venv 
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          
+          echo "Executing all ETSI tests sequentially..."
+          # Running on the root NGSI-LD folder forces a serial execution of all sub-directories
+          # Excluding MQTT and IOP as they require multiple brokers/different profiles
+          robot --exclude mqtt --exclude iop --outputdir ./results ./TP/NGSI-LD || true
+
+      - name: Stop Environment
+        if: always()
+        run: docker compose -f ./compose-files/docker-compose-java-aaio-${{ env.PROFILE }}-test.yml down
+
+      - name: Print Scorpio Logs on Failure
+        if: failure()
+        run: |
+          echo "=== SCORPIO DOCKER LOGS ==="
+          cat dockerout.log || true
+
+      - name: Upload ETSI Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ETSI-Serial-Reports
+          path: ngsi-ld-test-suite/results/
+          retention-days: 14

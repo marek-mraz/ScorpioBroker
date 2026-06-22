@@ -1,12 +1,16 @@
 name: CI/CD Pipeline - Build, Test, and Push to GHCR
 
+
 on:
-  push:
-    branches:
-      - main
-      - 'development-quarkus'
-  pull_request:
   workflow_dispatch:
+    
+# on:
+#   push:
+#     branches:
+#       - main
+#       - 'development-quarkus'
+#   pull_request:
+#   workflow_dispatch:
 
 # Add necessary permissions for GitHub Actions to push to the GitHub Container Registry
 permissions:
