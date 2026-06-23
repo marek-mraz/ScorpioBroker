@@ -387,7 +387,7 @@ public class HistoryOperationsController {
 									NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType)
 									.onItem().transform(resp -> HttpUtils.toPartialContent(resp,
 											aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(), tqtFinal,
-												"DESC".equals(nOrder), n) : null));
+												"DESC".equals(nOrder), n, queryResult.getResultsLeftAfter() != null && queryResult.getResultsLeftAfter() > 0) : null));
 						});
 
 			} catch (Exception e) {

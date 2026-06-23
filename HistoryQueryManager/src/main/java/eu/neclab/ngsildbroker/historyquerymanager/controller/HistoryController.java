@@ -259,7 +259,8 @@ public class HistoryController {
 								NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT, payloadType)
 								.onItem().transform(resp -> HttpUtils.toPartialContent(resp,
 										aggrTerm == null ? HttpUtils.temporalContentRange(queryResult.getData(), temporalQueryTerm,
-												"DESC".equals(nOrder), n) : null));
+												"DESC".equals(nOrder), n,
+												queryResult.getResultsLeftAfter() != null && queryResult.getResultsLeftAfter() > 0) : null));
 					});
 		}).onFailure().recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 	}
@@ -379,7 +380,7 @@ public class HistoryController {
 									geometryProperty, finalOptions, null, ldService, null, null, false, false, -1);
 						}
 						// NGSI-LD 6.3.10: non-aggregated temporal retrieval -> 206 + Content-Range
-						String contentRange = HttpUtils.temporalContentRange(entity, tempQuery, "DESC".equals(nOrder), n);
+						String contentRange = HttpUtils.temporalContentRange(entity, tempQuery, "DESC".equals(nOrder), n, false);
 						if (temporalValues) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, false, false, AppConstants.ENTITY_RETRIEVED_PAYLOAD)

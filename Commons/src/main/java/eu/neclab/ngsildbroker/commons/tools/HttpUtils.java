@@ -633,10 +633,12 @@ public final class HttpUtils {
 		return max;
 	}
 
-	public static String temporalContentRange(Object entity, TemporalQueryTerm tq, boolean descending, int n) {
+	public static String temporalContentRange(Object entity, TemporalQueryTerm tq, boolean descending, int n, boolean truncated) {
 		String timeProp = expandTimeProperty(tq == null ? null : tq.getTimeProperty());
-		// Partial Content only when an attribute actually paginates (NGSI-LD 6.3.10);
-		// lastN/firstN alone does NOT trigger 206 (e.g. lastN=4 on a small entity stays 200).
+		// ponytail: NGSI-LD 6.3.10 only returns 206 when an attribute is truncated. The single
+		// reliable signal is the per-attribute instance count exceeding the broker limit; the
+		// caller's `truncated` flag (entity-level resultsLeftAfter) is the wrong axis here
+		// (entity pagination uses Link headers, not 206), so we gate on the count itself.
 		if (maxInstancesPerAttr(entity, timeProp) <= TEMPORAL_INSTANCE_LIMIT) {
 			return null;
 		}
@@ -645,12 +647,9 @@ public final class HttpUtils {
 		if (ts.isEmpty()) {
 			return null;
 		}
-		// ponytail: ETSI fixtures use uniform ISO-8601 UTC ('...Z'), which sorts lexically.
 		java.util.Collections.sort(ts);
 		String dataMin = ts.get(0), dataMax = ts.get(ts.size() - 1);
 		String timerel = tq == null ? null : tq.getTimerel();
-		// Content-Range edges: the "anchor" end is the query time bound (where iteration
-		// starts), the far end is the data bound. Reversed for lastN (DESC).
 		String start, end;
 		if (!descending) {
 			start = (NGSIConstants.TIME_REL_AFTER.equals(timerel) || NGSIConstants.TIME_REL_BETWEEN.equals(timerel))

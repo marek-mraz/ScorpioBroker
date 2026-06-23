@@ -107,7 +107,7 @@ public class HistoryDAO {
 						for (Map<String, Object> attribEntry : entries) {
 							attribEntry.put(NGSIConstants.NGSI_LD_INSTANCE_ID, List
 									.of(Map.of(NGSIConstants.JSON_LD_ID,
-											"instanceid:" + UUID.randomUUID().toString())));
+											"urn:ngsi-ld:Instance:" + UUID.randomUUID().toString())));
 							List<String> types = (List<String>) attribEntry.get(NGSIConstants.JSON_LD_TYPE);
 							if (types != null && types.contains(NGSIConstants.NGSI_LD_GEOPROPERTY)) {
 								JsonObject geoLocationVal = new JsonObject((Map<String, Object>) ((List<Object>) attribEntry.get(NGSIConstants.NGSI_LD_HAS_VALUE)).get(0));
@@ -208,7 +208,7 @@ public class HistoryDAO {
 					List<Map<String, Object>> entries = (List<Map<String, Object>>) entry.getValue();
 					for (Map<String, Object> attribEntry : entries) {
 						attribEntry.put(NGSIConstants.NGSI_LD_INSTANCE_ID, List.of(
-								Map.of(NGSIConstants.JSON_LD_ID, "instanceid:" + UUID.randomUUID().toString())));
+								Map.of(NGSIConstants.JSON_LD_ID, "urn:ngsi-ld:Instance:" + UUID.randomUUID().toString())));
 						Tuple tuple;
 						if (location != null) {
 							tuple = Tuple.of(entityId, entry.getKey(), new JsonObject(attribEntry), geoLocation);
@@ -362,7 +362,7 @@ public class HistoryDAO {
 							}
 							attribEntry.put(NGSIConstants.NGSI_LD_INSTANCE_ID, List
 									.of(Map.of(NGSIConstants.JSON_LD_ID,
-											"instanceid:" + UUID.randomUUID().toString())));
+											"urn:ngsi-ld:Instance:" + UUID.randomUUID().toString())));
 							
 							List<String> types = (List<String>) attribEntry.get(NGSIConstants.JSON_LD_TYPE);
 							if (types != null && types.contains(NGSIConstants.NGSI_LD_GEOPROPERTY)) {
@@ -509,7 +509,7 @@ public class HistoryDAO {
 		LocalDateTime now = LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getSendTimestamp()),
 				ZoneId.of("Z"));
 		String nowString = SerializationTools.notifiedAt_formatter.format(now);
-		String instanceId = UUID.randomUUID().toString();
+		String instanceId = "urn:ngsi-ld:Instance:" + UUID.randomUUID().toString();
 		JsonObject deletePayload = getAttribDeletedPayload(nowString, instanceId, request.getDatasetId());
 		return connectionManager.executeQuery(request.getTenant(), "INSERT INTO "
 				+ DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE

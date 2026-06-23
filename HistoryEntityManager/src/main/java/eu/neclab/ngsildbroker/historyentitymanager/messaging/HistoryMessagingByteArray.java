@@ -34,7 +34,7 @@ public class HistoryMessagingByteArray extends HistoryMessagingBase {
 
 	
 
-	@Scheduled(every = "5s", delayed = "${scorpio.startupdelay}")
+	@Scheduled(every = "0.5s", delayed = "${scorpio.startupdelay}")
 	void checkBuffer() {
 		super.checkBuffer();
 	}

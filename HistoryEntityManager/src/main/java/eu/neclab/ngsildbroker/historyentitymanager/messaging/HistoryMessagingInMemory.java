@@ -28,7 +28,7 @@ public class HistoryMessagingInMemory extends HistoryMessagingBase {
 		return handleEntityRaw(byteMessage);
 	}
 
-	@Scheduled(every = "5s", delayed = "${scorpio.startupdelay}")
+	@Scheduled(every = "0.5s", delayed = "${scorpio.startupdelay}")
 	void checkBuffer() {
 		super.checkBuffer();
 	}
