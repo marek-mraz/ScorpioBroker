@@ -815,6 +815,14 @@ public class JsonLdApi {
 					}
 					break;
 				case NGSIConstants.NGSI_LD_SCOPE:
+					// scope as a temporal deletedAt tombstone is a typed instance ({@type:Property,...}),
+					// not a scope string list; render it as a normal attribute then.
+					if (expandedValue instanceof List<?> scl && !scl.isEmpty() && scl.get(0) instanceof Map<?, ?> scm
+							&& scm.containsKey(NGSIConstants.JSON_LD_TYPE)) {
+						result.put(NGSIConstants.SCOPE, compactAttribute(key, (List<Object>) expandedValue, activeCtx,
+								removeSysAttrs, keyValue, concise, temporal, langQuery, options));
+						break;
+					}
 					List<Map<String, String>> scopeHelper = (List<Map<String, String>>) expandedValue;
 					if (scopeHelper.size() == 1) {
 						result.put(NGSIConstants.SCOPE, scopeHelper.get(0).get(NGSIConstants.JSON_LD_VALUE));

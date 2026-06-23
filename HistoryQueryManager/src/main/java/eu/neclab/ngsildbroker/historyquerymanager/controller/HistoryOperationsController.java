@@ -372,7 +372,7 @@ public class HistoryOperationsController {
 						geoQueryTerm, scopeQueryTerm, temporalQueryTerm, aggrTerm, langQuery, n, offsetN, nOrder,
 						actualLimit,
 						offset,
-						false, localOnly, context, request, null, null, null).onItem().transformToUni(queryResult -> {
+						false, localOnly, context, request, null, null, null, null).onItem().transformToUni(queryResult -> {
 							int payloadType;
 							if (aggrTerm == null) {
 								payloadType = AppConstants.QUERY_PAYLOAD;

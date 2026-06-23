@@ -906,11 +906,21 @@ public final class HttpUtils {
 	private static void makeTemporalValues(Object finalCompacted) {
 		if (finalCompacted instanceof Map entityMap) {
 			for (Object key : entityMap.keySet()) {
-				if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(key)) {
+				Object valueObj = entityMap.get(key);
+				// skip core members, EXCEPT a soft-deleted scope which is rendered as a typed
+				// Property instance ({type:Property,...}) and must get the temporalValues form too.
+				boolean scopeTombstone = NGSIConstants.SCOPE.equals(key)
+						&& ((valueObj instanceof Map<?, ?> sm && sm.containsKey(NGSIConstants.TYPE))
+								|| (valueObj instanceof List<?> sl && !sl.isEmpty()
+										&& sl.get(0) instanceof Map<?, ?> sm0 && sm0.containsKey(NGSIConstants.TYPE)));
+				if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(key) && !scopeTombstone) {
 					continue;
 				}
-				Object valueObj = entityMap.get(key);
-				if (valueObj instanceof List<?> l) {
+				// a single temporal instance may arrive collapsed to a Map (e.g. a lone deletedAt
+				// tombstone); treat it as a 1-element list so it still gets the values/[v,t] form
+				List<?> l = valueObj instanceof List<?> ll ? ll
+						: (valueObj instanceof Map ? java.util.Collections.singletonList(valueObj) : null);
+				if (l != null) {
 					Map<String, List<Object>> datasetIdToValues = new java.util.LinkedHashMap<>();
 					Map<String, String> datasetIdToType = new java.util.HashMap<>();
 					
@@ -928,6 +938,8 @@ public final class HttpUtils {
 							String date;
 							if (m.containsKey(NGSIConstants.QUERY_PARAMETER_OBSERVED_AT)) {
 								date = (String) m.get(NGSIConstants.QUERY_PARAMETER_OBSERVED_AT);
+							} else if (m.containsKey(NGSIConstants.QUERY_PARAMETER_DELETED_AT)) {
+								date = (String) m.get(NGSIConstants.QUERY_PARAMETER_DELETED_AT);
 							} else if (m.containsKey(NGSIConstants.QUERY_PARAMETER_MODIFIED_AT)) {
 								date = (String) m.get(NGSIConstants.QUERY_PARAMETER_MODIFIED_AT);
 							} else {

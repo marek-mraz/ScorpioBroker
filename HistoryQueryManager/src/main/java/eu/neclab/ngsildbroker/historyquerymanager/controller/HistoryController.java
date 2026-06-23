@@ -8,6 +8,7 @@ import eu.neclab.ngsildbroker.commons.datatypes.terms.AggrTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.OrderByTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.CSFQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.GeoQueryTerm;
@@ -93,7 +94,8 @@ public class HistoryController {
 			@QueryParam("offsetN") @DefaultValue("0") int offsetN,
 			@QueryParam("orderN") @DefaultValue("ASC") String nOrderInput,
 			@QueryParam("firstN") @DefaultValue("-1") int firstN, @QueryParam("local") String localS,
-			@QueryParam("pick") String pick, @QueryParam("omit") String omit, @QueryParam("datasetId") String datasetId) {
+			@QueryParam("pick") String pick, @QueryParam("omit") String omit, @QueryParam("datasetId") String datasetId,
+			@QueryParam("orderBy") String orderBy) {
 		boolean localOnly;
 		boolean count;
 		String tenant = HttpUtils.getTenant(request);
@@ -207,6 +209,7 @@ public class HistoryController {
 			DataSetIdTerm dataSetIdTerm = null;
 			PickTerm pickTermObj = null;
 			OmitTerm omitTermObj = null;
+			OrderByTerm orderByTermObj = null;
 			try {
 				dataSetIdTerm = QueryParser.parseDataSetId(datasetId);
 				if (pick != null) {
@@ -226,14 +229,16 @@ public class HistoryController {
 				temporalQueryTerm = QueryParser.parseTempQuery(timeProperty, timerel, timeAt, endTimeAt);
 				aggrTerm = QueryParser.parseAggrTerm(aggrMethodsF, aggrPeriodDurationF);
 				languageQueryTerm = QueryParser.parseLangQuery(lang);
+				orderByTermObj = QueryParser.parseOrderBy(orderBy, null, null, null, context);
 			} catch (Exception e) {
 				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 			}
 			List<Tuple3<String[], TypeQueryTerm, String>> tmp = new ArrayList<>(1);
 			tmp.add(Tuple3.of(idList, typeQueryTerm, idPattern));
+			final OrderByTerm orderByTermFinal = orderByTermObj;
 			return historyQueryService.query(tenant, tmp, attrsQueryTerm, qQueryTerm,
 					csfQueryTerm, geoQueryTerm, scopeQueryTerm, temporalQueryTerm, aggrTerm, languageQueryTerm,
-					n, offsetN, nOrder, actualLimit, offset, count, localOnly, context, request, dataSetIdTerm, pickTermObj, omitTermObj).onItem()
+					n, offsetN, nOrder, actualLimit, offset, count, localOnly, context, request, dataSetIdTerm, pickTermObj, omitTermObj, orderByTermFinal).onItem()
 					.transformToUni(queryResult -> {
 						int payloadType;
 						// ponytail: this is the /temporal/entities QUERY endpoint, so the root is

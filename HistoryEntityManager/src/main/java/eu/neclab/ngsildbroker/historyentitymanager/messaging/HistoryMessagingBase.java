@@ -27,6 +27,7 @@ import eu.neclab.ngsildbroker.commons.interfaces.BaseRequestHandler;
 import eu.neclab.ngsildbroker.commons.tools.MicroServiceUtils;
 import eu.neclab.ngsildbroker.historyentitymanager.service.HistoryEntityService;
 
+import io.quarkus.runtime.configuration.ConfigUtils;
 import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.Vertx;
 import jakarta.annotation.PostConstruct;
@@ -53,6 +54,12 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 
 	int instancesNr = 1;
 	int myInstancePos = 1;
+
+	// ponytail: in the in-memory (AAIO single-instance) profile, record to the temporal
+	// store synchronously so an immediate temporal query after a core write sees the data
+	// (ETSI conformance assumes synchronous propagation). Kafka mode keeps the async,
+	// debounced buffer for throughput — performance of the high-throughput path is unchanged.
+	private final boolean inMemoryActive = ConfigUtils.isProfileActive("in-memory");
 
 	@Inject
 	Vertx vertx;
@@ -122,6 +129,9 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 		buffer.add(message);
 		tenant2LastReceived.put(tenant, System.currentTimeMillis());
 		logger.debug("history manager got called for entity: " + message.getIds());
+		if (inMemoryActive) {
+			return flushTenant(tenant);
+		}
 		return Uni.createFrom().voidItem();
 	}
 
@@ -133,6 +143,21 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 			logger.debug("instancesNr: " + instancesNr);
 			logger.debug("myInstancePos: " + myInstancePos);
 			return Uni.createFrom().voidItem();
+		}
+
+		// in-memory delivery (sendObjectInMemory) calls handleBaseRequest directly, bypassing the
+		// handleEntityRaw type routing. Single-entity ops (attr delete/replace, merge, partial
+		// update) carry no/empty payload and would be dropped below; route them as-is so
+		// flushTenant's notBatch path applies them (e.g. the deletedAt soft-delete tombstone).
+		switch (message.getRequestType()) {
+			case AppConstants.DELETE_ATTRIBUTE_REQUEST:
+			case AppConstants.REPLACE_ATTRIBUTE_REQUEST:
+			case AppConstants.REPLACE_ENTITY_REQUEST:
+			case AppConstants.MERGE_PATCH_REQUEST:
+			case AppConstants.PARTIAL_UPDATE_REQUEST:
+				return baseHandleEntity(message);
+			default:
+				break;
 		}
 
 		if (message.getRequestType() != AppConstants.DELETE_REQUEST
@@ -161,6 +186,9 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 				}
 			}
 		}
+		if (inMemoryActive) {
+			return flushTenant(tenant);
+		}
 		return Uni.createFrom().voidItem();
 	}
 
@@ -185,84 +213,7 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 			}
 
 			if (buffer.size() >= maxSize || (lastReceived < System.currentTimeMillis() - 1000 && !buffer.isEmpty())) {
-				Map<Integer, Map<String, List<Map<String, Object>>>> opType2Payload = Maps.newHashMap();
-				List<BaseRequest> notBatch = Lists.newArrayList();
-				while (!buffer.isEmpty()) {
-
-					BaseRequest request = buffer.poll();
-
-					if (request.getRequestType() == AppConstants.DELETE_ATTRIBUTE_REQUEST
-							|| request.getRequestType() == AppConstants.REPLACE_ATTRIBUTE_REQUEST
-							|| request.getRequestType() == AppConstants.REPLACE_ENTITY_REQUEST
-							|| request.getRequestType() == AppConstants.MERGE_PATCH_REQUEST
-							|| request.getRequestType() == AppConstants.PARTIAL_UPDATE_REQUEST) {
-						notBatch.add(request);
-						continue;
-					}
-					int regTypeToUse;
-
-					switch (request.getRequestType()) {
-						case AppConstants.UPSERT_REQUEST:
-							regTypeToUse = AppConstants.BATCH_UPSERT_REQUEST;
-							break;
-						case AppConstants.CREATE_REQUEST:
-							regTypeToUse = AppConstants.BATCH_CREATE_REQUEST;
-							break;
-
-						case AppConstants.APPEND_REQUEST:
-						case AppConstants.UPDATE_REQUEST:
-							regTypeToUse = AppConstants.BATCH_UPDATE_REQUEST;
-							break;
-
-						case AppConstants.MERGE_PATCH_REQUEST:
-							regTypeToUse = AppConstants.BATCH_MERGE_REQUEST;
-							break;
-
-						case AppConstants.DELETE_REQUEST:
-							regTypeToUse = AppConstants.BATCH_DELETE_REQUEST;
-							break;
-
-						default:
-							continue;
-					}
-
-					Map<String, List<Map<String, Object>>> payloads = opType2Payload.get(regTypeToUse);
-					if (payloads == null) {
-						payloads = Maps.newHashMap();
-						opType2Payload.put(regTypeToUse, payloads);
-					}
-					if (regTypeToUse == AppConstants.BATCH_DELETE_REQUEST) {
-						for (String id : request.getIds()) {
-							payloads.put(id, null);
-						}
-					} else {
-						Map<String, List<Map<String, Object>>> payload = request.getPayload();
-						for (Entry<String, List<Map<String, Object>>> pEntry : payload.entrySet()) {
-							List<Map<String, Object>> tmp = payloads.get(pEntry.getKey());
-							if (tmp == null) {
-								tmp = Lists.newArrayList();
-								payloads.put(pEntry.getKey(), tmp);
-							}
-							tmp.addAll(pEntry.getValue());
-						}
-					}
-
-				}
-
-				for (Entry<Integer, Map<String, List<Map<String, Object>>>> entry : opType2Payload.entrySet()) {
-					if (entry.getKey() == AppConstants.BATCH_DELETE_REQUEST) {
-						unis.add(historyService.handleInternalBatchRequest(
-								new BatchRequest(tenant, entry.getValue().keySet(), null, entry.getKey(), false)));
-					} else {
-						unis.add(historyService.handleInternalBatchRequest(new BatchRequest(tenant,
-								entry.getValue().keySet(), entry.getValue(), entry.getKey(), false)));
-					}
-
-				}
-				for (BaseRequest entry : notBatch) {
-					unis.add(historyService.handleInternalRequest(entry));
-				}
-
+				unis.add(flushTenant(tenant));
 			}
 		}
 
@@ -275,6 +226,87 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 		}).runSubscriptionOn(histRecordingExecutor).subscribe().with(v -> {
 			logger.debug("running hist recording on threadpool");
 		});
+	}
+
+	// Drain one tenant's buffer into the temporal store and return the combined write Uni.
+	// Same batching as the scheduled flush; used both by checkBuffer (async, kafka) and
+	// synchronously per-message by the in-memory handlers above.
+	private Uni<Void> flushTenant(String tenant) {
+		ConcurrentLinkedQueue<BaseRequest> buffer = tenant2Buffer.get(tenant);
+		if (buffer == null || buffer.isEmpty()) {
+			return Uni.createFrom().voidItem();
+		}
+		List<Uni<Void>> unis = Lists.newArrayList();
+		Map<Integer, Map<String, List<Map<String, Object>>>> opType2Payload = Maps.newHashMap();
+		List<BaseRequest> notBatch = Lists.newArrayList();
+		while (!buffer.isEmpty()) {
+			BaseRequest request = buffer.poll();
+			if (request.getRequestType() == AppConstants.DELETE_ATTRIBUTE_REQUEST
+					|| request.getRequestType() == AppConstants.REPLACE_ATTRIBUTE_REQUEST
+					|| request.getRequestType() == AppConstants.REPLACE_ENTITY_REQUEST
+					|| request.getRequestType() == AppConstants.MERGE_PATCH_REQUEST
+					|| request.getRequestType() == AppConstants.PARTIAL_UPDATE_REQUEST) {
+				notBatch.add(request);
+				continue;
+			}
+			int regTypeToUse;
+			switch (request.getRequestType()) {
+				case AppConstants.UPSERT_REQUEST:
+					regTypeToUse = AppConstants.BATCH_UPSERT_REQUEST;
+					break;
+				case AppConstants.CREATE_REQUEST:
+					regTypeToUse = AppConstants.BATCH_CREATE_REQUEST;
+					break;
+				case AppConstants.APPEND_REQUEST:
+				case AppConstants.UPDATE_REQUEST:
+					regTypeToUse = AppConstants.BATCH_UPDATE_REQUEST;
+					break;
+				case AppConstants.MERGE_PATCH_REQUEST:
+					regTypeToUse = AppConstants.BATCH_MERGE_REQUEST;
+					break;
+				case AppConstants.DELETE_REQUEST:
+					regTypeToUse = AppConstants.BATCH_DELETE_REQUEST;
+					break;
+				default:
+					continue;
+			}
+			Map<String, List<Map<String, Object>>> payloads = opType2Payload.get(regTypeToUse);
+			if (payloads == null) {
+				payloads = Maps.newHashMap();
+				opType2Payload.put(regTypeToUse, payloads);
+			}
+			if (regTypeToUse == AppConstants.BATCH_DELETE_REQUEST) {
+				for (String id : request.getIds()) {
+					payloads.put(id, null);
+				}
+			} else {
+				Map<String, List<Map<String, Object>>> payload = request.getPayload();
+				for (Entry<String, List<Map<String, Object>>> pEntry : payload.entrySet()) {
+					List<Map<String, Object>> tmp = payloads.get(pEntry.getKey());
+					if (tmp == null) {
+						tmp = Lists.newArrayList();
+						payloads.put(pEntry.getKey(), tmp);
+					}
+					tmp.addAll(pEntry.getValue());
+				}
+			}
+		}
+		for (Entry<Integer, Map<String, List<Map<String, Object>>>> entry : opType2Payload.entrySet()) {
+			if (entry.getKey() == AppConstants.BATCH_DELETE_REQUEST) {
+				unis.add(historyService.handleInternalBatchRequest(
+						new BatchRequest(tenant, entry.getValue().keySet(), null, entry.getKey(), false)));
+			} else {
+				unis.add(historyService.handleInternalBatchRequest(new BatchRequest(tenant,
+						entry.getValue().keySet(), entry.getValue(), entry.getKey(), false)));
+			}
+		}
+		for (BaseRequest entry : notBatch) {
+			unis.add(historyService.handleInternalRequest(entry));
+		}
+		if (unis.isEmpty()) {
+			return Uni.createFrom().voidItem();
+		}
+		return Uni.combine().all().unis(unis).with(list -> null).replaceWithVoid();
 	}
 
 	public int getInstancesNr() {

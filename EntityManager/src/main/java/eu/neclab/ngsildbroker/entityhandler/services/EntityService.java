@@ -433,6 +433,15 @@ public class EntityService implements CSourceHandler {
 			result.addSuccess(new CRUDSuccess(null, null, null,
 					Set.of(new Attrib(request.getAttribName(), request.getDatasetId()))));
 			return Uni.createFrom().item(result);
+		}).onFailure().recoverWithUni(err -> {
+			// The current representation may not exist (e.g. the entity was created only via the
+			// temporal API). The temporal evolution can still record the soft-delete deletedAt
+			// tombstone, so emit the event regardless; the original 404 is preserved for callers.
+			try {
+				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
+			} catch (ResponseException ignore) {
+			}
+			return Uni.createFrom().failure(err);
 		});
 	}
 

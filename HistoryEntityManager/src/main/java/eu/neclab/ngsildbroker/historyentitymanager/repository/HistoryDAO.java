@@ -454,20 +454,33 @@ public class HistoryDAO {
 			tuple = Tuple.of(request.getAttribName(), request.getFirstId(), request.getDatasetId());
 		}
 
-		return connectionManager.executeQuery(request.getTenant(), sql, tuple, false).onFailure().recoverWithUni(e -> {
-			if (e instanceof PgException pge) {
-				if (pge.getSqlState().equals(AppConstants.SQL_NOT_FOUND)) {
-					return Uni.createFrom().failure(
-							new ResponseException(ErrorType.NotFound, request.getFirstId() + " does not exist"));
-				}
-			}
-			return Uni.createFrom().failure(e);
-		}).onItem().transformToUni(rows -> {
-			if (rows.rowCount() == 0) {
-				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound, request.getFirstId() + " does not exist"));
-			}
-			return setAttributeDeleted(request);
-		});
+		final String deleteSql = sql;
+		final Tuple deleteTuple = tuple;
+		// capture the attribute @type before deletion so the soft-delete tombstone preserves it
+		return connectionManager.executeQuery(request.getTenant(),
+				"SELECT data #>> '{" + NGSIConstants.JSON_LD_TYPE + ",0}' FROM "
+						+ DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
+						+ " WHERE attributeid=$1 AND temporalentity_id=$2 LIMIT 1",
+				Tuple.of(request.getAttribName(), request.getFirstId()), false)
+				.onItem().transformToUni(typeRows -> {
+					final String attrType = typeRows.rowCount() > 0 ? typeRows.iterator().next().getString(0) : null;
+					return connectionManager.executeQuery(request.getTenant(), deleteSql, deleteTuple, false).onFailure()
+							.recoverWithUni(e -> {
+								if (e instanceof PgException pge) {
+									if (pge.getSqlState().equals(AppConstants.SQL_NOT_FOUND)) {
+										return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
+												request.getFirstId() + " does not exist"));
+									}
+								}
+								return Uni.createFrom().failure(e);
+							}).onItem().transformToUni(rows -> {
+								if (rows.rowCount() == 0) {
+									return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
+											request.getFirstId() + " does not exist"));
+								}
+								return setAttributeDeleted(request, attrType);
+							});
+				});
 
 		// });
 	}
@@ -506,11 +519,24 @@ public class HistoryDAO {
 	}
 
 	public Uni<Void> setAttributeDeleted(BaseRequest request) {
+		// look up the attribute @type from the existing temporal instances so the tombstone
+		// preserves Property/Relationship/LanguageProperty (the event path has no type otherwise)
+		return connectionManager.executeQuery(request.getTenant(),
+				"SELECT data #>> '{" + NGSIConstants.JSON_LD_TYPE + ",0}' FROM "
+						+ DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
+						+ " WHERE attributeid=$1 AND temporalentity_id=$2 LIMIT 1",
+				Tuple.of(request.getAttribName(), request.getFirstId()), false)
+				.onItem().transformToUni(rows -> setAttributeDeleted(request,
+						rows.rowCount() > 0 ? rows.iterator().next().getString(0) : null));
+	}
+
+	public Uni<Void> setAttributeDeleted(BaseRequest request, String attrType) {
 		LocalDateTime now = LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getSendTimestamp()),
 				ZoneId.of("Z"));
 		String nowString = SerializationTools.notifiedAt_formatter.format(now);
 		String instanceId = "urn:ngsi-ld:Instance:" + UUID.randomUUID().toString();
-		JsonObject deletePayload = getAttribDeletedPayload(nowString, instanceId, request.getDatasetId());
+		JsonObject deletePayload = getAttribDeletedPayload(nowString, instanceId, request.getDatasetId(), attrType,
+				request.getAttribName());
 		return connectionManager.executeQuery(request.getTenant(), "INSERT INTO "
 				+ DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
 				+ " (temporalentity_id, attributeid, data, deletedat, instanceId) VALUES ($1, $2, $3::jsonb, $4, $5)",
@@ -532,14 +558,38 @@ public class HistoryDAO {
 				}).onItem().transformToUni(t -> Uni.createFrom().voidItem());
 	}
 
-	private JsonObject getAttribDeletedPayload(String now, String instanceId, String datasetId) {
+	private JsonObject getAttribDeletedPayload(String now, String instanceId, String datasetId, String attrType,
+			String attribName) {
 		Map<String, Object> result = Maps.newHashMap();
 		result.put(NGSIConstants.NGSI_LD_DELETED_AT, Lists.newArrayList(
 				Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME, NGSIConstants.JSON_LD_VALUE, now)));
+		// scope soft-delete (NGSI-LD 5.6.17) renders as {type:Property, value:[], deletedAt} -
+		// no instanceId, value is an empty array (it is a core member, not a regular attribute).
+		if (NGSIConstants.NGSI_LD_SCOPE.equals(attribName)) {
+			result.put(NGSIConstants.JSON_LD_TYPE, Lists.newArrayList(NGSIConstants.NGSI_LD_PROPERTY));
+			// empty hasValue list compacts to value:[] (the deleted scope has no remaining values)
+			result.put(NGSIConstants.NGSI_LD_HAS_VALUE, Lists.newArrayList());
+			return new JsonObject(result);
+		}
 		result.put(NGSIConstants.NGSI_LD_INSTANCE_ID, Lists.newArrayList(Map.of(NGSIConstants.JSON_LD_ID, instanceId)));
 		if (datasetId != null) {
 			result.put(NGSIConstants.NGSI_LD_DATA_SET_ID,
 					Lists.newArrayList(Map.of(NGSIConstants.JSON_LD_ID, instanceId)));
+		}
+		// NGSI-LD 5.7.3 soft-delete: the tombstone instance keeps the attribute type and carries the
+		// reserved urn:ngsi-ld:null (object for Relationship, languageMap for LanguageProperty, value else).
+		String type = attrType != null ? attrType : NGSIConstants.NGSI_LD_PROPERTY;
+		result.put(NGSIConstants.JSON_LD_TYPE, Lists.newArrayList(type));
+		if (NGSIConstants.NGSI_LD_RELATIONSHIP.equals(type)) {
+			result.put(NGSIConstants.NGSI_LD_HAS_OBJECT,
+					Lists.newArrayList(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
+		} else if (NGSIConstants.NGSI_LD_LANGPROPERTY.equals(type)) {
+			result.put(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP, Lists.newArrayList(Map.of(
+					NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL,
+					NGSIConstants.JSON_LD_LANGUAGE, NGSIConstants.JSON_LD_NONE)));
+		} else {
+			result.put(NGSIConstants.NGSI_LD_HAS_VALUE,
+					Lists.newArrayList(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
 		}
 		return new JsonObject(result);
 	}

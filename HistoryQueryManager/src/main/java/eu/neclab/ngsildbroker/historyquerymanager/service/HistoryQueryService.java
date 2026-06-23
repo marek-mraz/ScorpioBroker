@@ -38,6 +38,7 @@ import eu.neclab.ngsildbroker.commons.datatypes.terms.AggrTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.OrderByTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.CSFQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.GeoQueryTerm;
@@ -101,13 +102,14 @@ public class HistoryQueryService implements CSourceHandler {
 			ScopeQueryTerm scopeQuery, TemporalQueryTerm tempQuery, AggrTerm aggrQuery, LanguageQueryTerm langQuery,
 			int n, int offsetN, String orderN, Integer limit, Integer offSet, Boolean count, Boolean localOnly,
 			Context context,
-			HttpServerRequest request, DataSetIdTerm dataSetIdTerm, PickTerm pickTerm, OmitTerm omitTerm) {
+			HttpServerRequest request, DataSetIdTerm dataSetIdTerm, PickTerm pickTerm, OmitTerm omitTerm,
+			OrderByTerm orderBy) {
 		Uni<QueryResult> local = historyDAO
 				.query(tenant, idsAndTypeQueryAndIdPattern, attrsQuery, qQuery, geoQuery,
 						scopeQuery, context, limit,
 						offSet, dataSetIdTerm, null, -1, null, pickTerm, omitTerm, "", false, true, true, null,
 						localOnly, false, false,
-						count, null, false, tempQuery, aggrQuery, n, offsetN, orderN)
+						count, orderBy, false, tempQuery, aggrQuery, n, offsetN, orderN)
 				.onFailure()
 				.recoverWithUni(e -> {
 					if (e instanceof PgException) {

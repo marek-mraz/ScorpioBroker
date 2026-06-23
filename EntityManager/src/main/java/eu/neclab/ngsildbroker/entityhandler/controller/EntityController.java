@@ -333,7 +333,10 @@ public class EntityController {// implements EntityHandlerInterface {
 	public Uni<RestResponse<Object>> deleteAttribute(HttpServerRequest request, @PathParam("entityId") String entityId,
 			@PathParam("attrId") String attrId, @QueryParam("datasetId") String datasetId,
 			@QueryParam("deleteAll") String deleteAllS) {
-		if (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId) || NGSIConstants.ENTITY_BASE_PROPS.contains(attrId)) {
+		// scope is a base member but, unlike id/type/timestamps, it IS deletable (NGSI-LD 5.6.17)
+		boolean isScope = NGSIConstants.SCOPE.equals(attrId) || NGSIConstants.NGSI_LD_SCOPE.equals(attrId);
+		if (!isScope && (NGSIConstants.ENTITY_BASE_PROPS_SHORT.contains(attrId)
+				|| NGSIConstants.ENTITY_BASE_PROPS.contains(attrId))) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(ErrorType.BadRequestData, "Cannot delete base property"), HttpUtils.getTenant(request)));
 		}
 		boolean deleteAll;
