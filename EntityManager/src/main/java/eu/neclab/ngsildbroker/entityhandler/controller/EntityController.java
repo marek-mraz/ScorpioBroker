@@ -298,6 +298,12 @@ public class EntityController {// implements EntityHandlerInterface {
 					} else {
 						finalPayload = expandedPayload;
 					}
+					// ponytail: in a partial-update fragment the core term datasetId mis-expands to a
+					// Property node {@type:Property, hasValue:[{@value:<id>}]} instead of {@id:<id>}, so
+					// the SQL (ngsild_update_entity / ngsild_partialupdate) can't match the target
+					// instance by datasetId -> null-delete and update-by-datasetId silently no-op.
+					// Normalize back to {@id}. No-op when already correct.
+					normalizeFragmentDatasetId(finalPayload.get(expAttrib));
 
 					return entityService.partialUpdateAttribute(HttpUtils.getTenant(req), entityId, expAttrib,
 							finalPayload, tuple.getItem1(), req.headers(), viaHeaders).onItem()
@@ -308,6 +314,35 @@ public class EntityController {// implements EntityHandlerInterface {
 				}).onFailure().recoverWithItem(e -> {
 					return HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(req));
 				});
+	}
+
+	@SuppressWarnings("unchecked")
+	private static void normalizeFragmentDatasetId(Object attrValue) {
+		if (!(attrValue instanceof List<?> instances)) {
+			return;
+		}
+		for (Object inst : instances) {
+			if (!(inst instanceof Map)) {
+				continue;
+			}
+			Map<String, Object> instance = (Map<String, Object>) inst;
+			Object ds = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+			if (!(ds instanceof List<?> dsList) || dsList.isEmpty() || !(dsList.get(0) instanceof Map)) {
+				continue;
+			}
+			Map<String, Object> dsMap = (Map<String, Object>) dsList.get(0);
+			if (dsMap.containsKey(NGSIConstants.JSON_LD_ID)) {
+				continue; // already {@id:<value>}
+			}
+			Object hv = dsMap.get(NGSIConstants.NGSI_LD_HAS_VALUE);
+			if (hv instanceof List<?> hvList && !hvList.isEmpty() && hvList.get(0) instanceof Map) {
+				Object val = ((Map<String, Object>) hvList.get(0)).get(NGSIConstants.JSON_LD_VALUE);
+				if (val != null) {
+					instance.put(NGSIConstants.NGSI_LD_DATA_SET_ID,
+							List.of(Map.of(NGSIConstants.JSON_LD_ID, val)));
+				}
+			}
+		}
 	}
 
 	/**
