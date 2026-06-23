@@ -300,7 +300,7 @@ public class EntityService implements CSourceHandler {
 					return HttpUtils
 							.connect(webClient,
 									remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/" + entityId
-											+ "/attrs/" + request.getAttribName(),
+											+ "/attrs/" + context.compactIri(request.getAttribName()),
 									tenant, AppConstants.PATCH_OP, AppConstants.NGB_APPLICATION_JSON, null,
 									toFrwd, body, viaHeaders,
 									remoteHost.cSourceAlias(), -1)
@@ -382,11 +382,18 @@ public class EntityService implements CSourceHandler {
 		for (RemoteHost remoteHost : remoteHosts) {
 			MultiMap toFrwd = HttpUtils.getHeadToFrwd(remoteHost.headers(), headersFromReq);
 			String url = remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/" + entityId + "/attrs/"
-					+ attribName;
-			Map<String, String> queryParams = new HashMap<>(2);
-			queryParams.put(NGSIConstants.QUERY_PARAMETER_DELETE_ALL, "" + deleteAll);
-			if (datasetId != null) {
-				queryParams.put(NGSIConstants.QUERY_PARAMETER_DATA_SET_ID, datasetId);
+					+ context.compactIri(attribName);
+			// ponytail: only forward non-default query params; deleteAll=false / absent datasetId are
+			// the defaults, and a spurious "?deleteAll=false" breaks exact-match Context Sources.
+			Map<String, String> queryParams = null;
+			if (deleteAll || datasetId != null) {
+				queryParams = new HashMap<>(2);
+				if (deleteAll) {
+					queryParams.put(NGSIConstants.QUERY_PARAMETER_DELETE_ALL, "true");
+				}
+				if (datasetId != null) {
+					queryParams.put(NGSIConstants.QUERY_PARAMETER_DATA_SET_ID, datasetId);
+				}
 			}
 
 			unis.add(HttpUtils
@@ -624,7 +631,7 @@ public class EntityService implements CSourceHandler {
 							return HttpUtils
 									.connect(webClient,
 											remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/"
-													+ entityId + "/attrs",
+													+ entityId + "/attrs/",
 											tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
 											toFrwd, body, viaHeaders,
 											remoteHost.cSourceAlias(), -1)
@@ -663,7 +670,7 @@ public class EntityService implements CSourceHandler {
 			}
 
 		}
-		if (!localEntity.isEmpty()) {
+		if (localEntity != null && !localEntity.isEmpty()) {
 			if (!unis.isEmpty() && isDifferentRemoteQueryAvailable(request, remoteEntitiesAndHosts, entityId)) {
 				request.setDistributed(true);
 			} else {
@@ -729,7 +736,7 @@ public class EntityService implements CSourceHandler {
 			}));
 
 		}
-		if (!localEntity.isEmpty()) {
+		if (localEntity != null && !localEntity.isEmpty()) {
 			if (!unis.isEmpty() && isDifferentRemoteQueryAvailable(request, remoteEntitiesAndHosts, entityId)) {
 				request.setDistributed(true);
 			} else {
@@ -984,10 +991,15 @@ public class EntityService implements CSourceHandler {
 							continue;
 					}
 
-					String propType = ((List<String>) ((List<Map<String, Object>>) entry.getValue()).get(0)
-							.get(NGSIConstants.JSON_LD_TYPE)).get(0);
+					List<Map<String, Object>> attrInstances = (List<Map<String, Object>>) entry.getValue();
+					Object typeVal = attrInstances.isEmpty() ? null
+							: attrInstances.get(0).get(NGSIConstants.JSON_LD_TYPE);
+					// ponytail: value-only fragments (partial update) carry no @type -> treat as property
+					String propType = (typeVal instanceof List && !((List<?>) typeVal).isEmpty())
+							? (String) ((List<?>) typeVal).get(0)
+							: null;
 					Tuple2<Set<String>, Set<String>> matches;
-					if (propType.equals(NGSIConstants.NGSI_LD_RELATIONSHIP)) {
+					if (NGSIConstants.NGSI_LD_RELATIONSHIP.equals(propType)) {
 						matches = regEntry.matches(entityId, originalTypes, null, entry.getKey(), originalScopes,
 								location);
 					} else {
@@ -2160,7 +2172,9 @@ public class EntityService implements CSourceHandler {
 				request, entityId);
 		Map<String, Object> localEntity = localAndRemote.getItem1();
 		Collection<Tuple2<RemoteHost, Map<String, Object>>> remoteEntitiesAndHosts = localAndRemote.getItem2();
-		localEntity.remove(NGSIConstants.JSON_LD_TYPE);
+		if (localEntity != null) {
+			localEntity.remove(NGSIConstants.JSON_LD_TYPE);
+		}
 		List<Uni<NGSILDOperationResult>> unis = new ArrayList<>(remoteEntitiesAndHosts.size());
 		// if (remoteEntitiesAndHosts.isEmpty()) {
 		// request.setPayload(localEntity);
@@ -2183,8 +2197,8 @@ public class EntityService implements CSourceHandler {
 					return HttpUtils
 							.connect(webClient,
 									remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/" + entityId + "/"
-											+ "attrs" + "/" + attrId,
-									tenant, AppConstants.PATCH_OP, AppConstants.NGB_APPLICATION_JSON, null,
+											+ "attrs" + "/" + context.compactIri(attrId),
+									tenant, AppConstants.PUT_OP, AppConstants.NGB_APPLICATION_JSON, null,
 									toFrwd, body, viaHeaders,
 									remoteHost.cSourceAlias(), -1)
 							.onItemOrFailure().transform((response, failure) -> {
