@@ -393,8 +393,9 @@ public class Subscription implements Serializable {
 
 	@SuppressWarnings("unchecked")
 	public static NotificationParam getNotificationParam(Map<String, Object> map, Context context) throws Exception {
-		// Default accept
-		String accept = AppConstants.NGB_APPLICATION_JSONLD;
+		// Default accept is application/json (NGSI-LD 5.8.x): notification data then carries no
+		// @context (it goes in the Link header), matching the default notification representation.
+		String accept = AppConstants.NGB_APPLICATION_JSON;
 		Format format = Format.normalized;
 
 		String mqttVersion = null;

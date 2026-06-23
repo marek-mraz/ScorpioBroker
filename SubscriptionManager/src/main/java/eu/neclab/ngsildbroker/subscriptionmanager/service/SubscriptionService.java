@@ -887,7 +887,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			}
 			Map<String, List<Map<String, Object>>> payloadToUse = Maps.newHashMap();
 			Map<String, List<Map<String, Object>>> prevPayloadToUse = Maps.newHashMap();
-			if (message.getPayload() != null) {
+			// an attribute delete carries the relevant (deleted) attribute in prevPayload, not in
+			// payload, so match on prevPayload (attributeDeleted notifications, NGSI-LD 5.8.6).
+			boolean isAttrDelete = message.getRequestType() == AppConstants.DELETE_ATTRIBUTE_REQUEST;
+			if (!isAttrDelete && message.getPayload() != null) {
 				for (Entry<String, List<Map<String, Object>>> entry : message.getPayload().entrySet()) {
 					for (Map<String, Object> mapEntry : entry.getValue()) {
 						if (potentialSub.firstCheckToSendOut(entry.getKey(), mapEntry, ALL_TYPES_SUB)) {
@@ -992,28 +995,33 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						break;
 					}
 					case AppConstants.DELETE_ATTRIBUTE_REQUEST: {
+						// attributeDeleted notification (NGSI-LD 5.8.6): the deleted attribute (or the
+						// affected datasetId instance) must be present in the notified entity, valued with
+						// the urn:ngsi-ld:null tombstone - not removed. showChanges adds previousValue +
+						// deletedAt instead.
 						List<Map<String, Object>> tmp = Lists.newArrayList();
-						if (potentialSub.getSubscription().getNotification().getShowChanges()) {
-							prevPayloadToUse.values().forEach(payloads -> {
-								payloads.forEach(payload -> {
-									List<Map<String, Object>> attribs = (List<Map<String, Object>>) payload
-											.get(message.getAttribName());
-									if (attribs != null) {
-										for (Map<String, Object> attrib : attribs) {
-											putOldAttribFromDelete(attrib, message.getSendTimestamp());
+						boolean showChanges = potentialSub.getSubscription().getNotification().getShowChanges();
+						String delAttr = message.getAttribName();
+						String delDataset = message.getDatasetId();
+						boolean delAll = message.isDeleteAll();
+						prevPayloadToUse.values().forEach(payloads -> {
+							payloads.forEach(payload -> {
+								List<Map<String, Object>> attribs = (List<Map<String, Object>>) payload.get(delAttr);
+								if (attribs != null) {
+									for (Map<String, Object> attrib : attribs) {
+										if (!deletedInstanceMatches(attrib, delDataset, delAll)) {
+											continue;
 										}
-										tmp.add(payload);
+										if (showChanges) {
+											putOldAttribFromDelete(attrib, message.getSendTimestamp());
+										} else {
+											nullifyDeletedAttrib(attrib);
+										}
 									}
-								});
+								}
+								tmp.add(payload);
 							});
-						} else {
-							prevPayloadToUse.values().forEach(payloads -> {
-								payloads.forEach(payload -> {
-									payload.remove(message.getAttribName());
-									tmp.add(payload);
-								});
-							});
-						}
+						});
 						dataToSend = tmp;
 						break;
 					}
@@ -1272,6 +1280,48 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	}
 
+	// true if this attribute instance is the one targeted by the delete (deleteAll -> every
+	// instance; an explicit datasetId -> the matching instance; no datasetId -> the default,
+	// i.e. the instance carrying no datasetId).
+	@SuppressWarnings("unchecked")
+	private boolean deletedInstanceMatches(Map<String, Object> instance, String datasetId, boolean deleteAll) {
+		if (deleteAll) {
+			return true;
+		}
+		String instDataset = null;
+		Object ds = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		if (ds instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map) {
+			instDataset = (String) ((Map<String, Object>) l.get(0)).get(NGSIConstants.JSON_LD_ID);
+		}
+		if (datasetId == null || NGSIConstants.DEFAULT_DATA_SET_ID.equals(datasetId)) {
+			return instDataset == null || NGSIConstants.DEFAULT_DATA_SET_ID.equals(instDataset);
+		}
+		return datasetId.equals(instDataset);
+	}
+
+	// replace an attribute instance's value/object with the urn:ngsi-ld:null tombstone, keeping
+	// only its @type and datasetId (the NGSI-LD null representation used in notifications).
+	private void nullifyDeletedAttrib(Map<String, Object> instance) {
+		boolean isRel = instance.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)
+				|| instance.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST);
+		Object type = instance.get(NGSIConstants.JSON_LD_TYPE);
+		Object dataset = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		instance.clear();
+		if (type != null) {
+			instance.put(NGSIConstants.JSON_LD_TYPE, type);
+		}
+		if (dataset != null) {
+			instance.put(NGSIConstants.NGSI_LD_DATA_SET_ID, dataset);
+		}
+		if (isRel) {
+			instance.put(NGSIConstants.NGSI_LD_HAS_OBJECT,
+					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
+		} else {
+			instance.put(NGSIConstants.NGSI_LD_HAS_VALUE,
+					List.of(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
+		}
+	}
+
 	private void putOldAttribFromDelete(Map<String, Object> oldEntry, long timeStamp) {
 		oldEntry.put(NGSIConstants.NGSI_LD_DELETED_AT,
 				List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME, NGSIConstants.JSON_LD_VALUE,
@@ -1497,17 +1547,29 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		URI host = notificationParam.getEndPoint().getUri();
 		String hostString = host.getUserInfo() + host.getHost() + host.getPort();
 		MqttClient client;
+		// default MQTT port when the notification URI has no explicit port (getPort()==-1)
+		int mqttPort = host.getPort();
+		if (mqttPort == -1) {
+			mqttPort = host.getScheme().equals(AppConstants.PROTOCOL_MQTTS) ? 8883 : 1883;
+		}
 
 		if (!host2MqttClient.containsKey(hostString)) {
 			MqttClientOptions options = new MqttClientOptions();
 			if (host.getUserInfo() != null) {
 				String[] usrPass = host.getUserInfo().split(":");
-				options.setUsername(usrPass[0]).setPassword(usrPass[1]);
+				options.setUsername(usrPass[0]);
+				// userInfo may be just "user" (no password)
+				if (usrPass.length > 1) {
+					options.setPassword(usrPass[1]);
+				}
 			}
 			if (host.getScheme().equals(AppConstants.PROTOCOL_MQTTS)) {
 				options.setSsl(true);
 			}
 			Map<String, Collection<String>> recieverInfo = notificationParam.getEndPoint().getReceiverInfoMap();
+			if (recieverInfo == null) {
+				recieverInfo = java.util.Collections.emptyMap();
+			}
 			PemKeyCertOptions certOptions = null;
 			if (recieverInfo.containsKey(AppConstants.SSL_KEY)) {
 				certOptions = new PemKeyCertOptions();
@@ -1536,7 +1598,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			}
 
 			client = MqttClient.create(vertx, options);
-			return client.connect(host.getPort(), host.getHost()).onItem().transform(t -> {
+			return client.connect(mqttPort, host.getHost()).onItem().transform(t -> {
 				host2MqttClient.put(hostString, client);
 				return client;
 			});
@@ -1545,7 +1607,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			if (client.isConnected()) {
 				return Uni.createFrom().item(client);
 			} else {
-				return client.connect(host.getPort(), host.getHost()).onItem().transform(t -> {
+				return client.connect(mqttPort, host.getHost()).onItem().transform(t -> {
 					return client;
 				});
 			}
