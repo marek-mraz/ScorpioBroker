@@ -1165,6 +1165,14 @@ public class JsonLdApi {
 			resultMap.put(NGSIConstants.QUERY_PARAMETER_OBSERVED_AT,
 					observedAt.get(0).get(NGSIConstants.JSON_LD_VALUE));
 		}
+		// NGSI-LD 1.6 soft-delete: flatten the deletedAt temporal property like observedAt
+		// (otherwise it leaks as the generic "ngsi-ld:deletedAt" array form)
+		List<Map<String, Object>> deletedAt = (List<Map<String, Object>>) attribMap
+				.remove(NGSIConstants.NGSI_LD_DELETED_AT);
+		if (deletedAt != null && !deletedAt.isEmpty()) {
+			resultMap.put(NGSIConstants.QUERY_PARAMETER_DELETED_AT,
+					deletedAt.get(0).get(NGSIConstants.JSON_LD_VALUE));
+		}
 
 		if (datasetId != null) {
 			resultMap.put(NGSIConstants.NGSI_LD_DATA_SET_ID_SHORT,
