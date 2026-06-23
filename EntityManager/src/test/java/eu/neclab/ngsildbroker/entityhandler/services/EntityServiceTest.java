@@ -245,7 +245,7 @@ public class EntityServiceTest {
 			when(entityEmitter.send(any(String.class))).thenReturn(emitterResponse);
 
 			NGSILDOperationResult operationResult = entityService
-					.deleteEntity(tenant, entityId, context, headersFromReq, viaHeaders).await().indefinitely();
+					.deleteEntity(tenant, entityId, context, headersFromReq, viaHeaders, false).await().indefinitely();
 
 			verify(entityDAO, times(1)).deleteEntity(any());
 			verify(entityEmitter, times(1)).sendAndForget(any(String.class));

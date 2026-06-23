@@ -1264,7 +1264,50 @@ public final class HttpUtils {
 	}
 
 	public static RestResponse<Object> generateDeleteResult(NGSILDOperationResult result) {
-		ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(204);
+		// Local-only delete (or every distributed source succeeded) -> plain 204 (NGSI-LD 5.6.6).
+		if (result.getFailures().isEmpty()) {
+			ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(204);
+			if (!result.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
+				builder = builder.header(NGSIConstants.TENANT_HEADER, result.getTenant());
+			}
+			return builder.build();
+		}
+		// A distributed delete where at least one Context Source failed -> 207 BatchOperationResult
+		// {success:[entityId], errors:[{entityId, error:<ProblemDetails>}]} (NGSI-LD 5.6.6 / 6.3.x).
+		List<String> success = new ArrayList<>();
+		if (!result.getSuccesses().isEmpty()) {
+			success.add(result.getEntityId());
+		}
+		List<Map<String, Object>> errors = new ArrayList<>();
+		for (ResponseException failure : result.getFailures()) {
+			Map<String, Object> err = new HashMap<>();
+			err.put(NGSIConstants.ENTITY_ID, result.getEntityId());
+			err.put("error", failure.getJson());
+			errors.add(err);
+		}
+		// Nothing succeeded and every source returned the same status -> surface that status directly.
+		if (success.isEmpty()) {
+			int code = result.getFailures().get(0).getErrorCode();
+			boolean same = true;
+			for (ResponseException f : result.getFailures()) {
+				if (f.getErrorCode() != code) {
+					same = false;
+					break;
+				}
+			}
+			if (same) {
+				ResponseBuilder<Object> b = new RestResponseBuilderImpl<Object>().status(code);
+				if (!result.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
+					b = b.header(NGSIConstants.TENANT_HEADER, result.getTenant());
+				}
+				return b.build();
+			}
+		}
+		Map<String, Object> body = new HashMap<>();
+		body.put("success", success);
+		body.put("errors", errors);
+		ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(207)
+				.type(AppConstants.NGB_APPLICATION_JSON).entity(new JsonObject(body));
 		if (!result.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
 			builder = builder.header(NGSIConstants.TENANT_HEADER, result.getTenant());
 		}
@@ -1534,7 +1577,9 @@ public final class HttpUtils {
 
 				JsonObject responseBody = response.bodyAsJsonObject();
 				if (responseBody == null) {
-					result.addFailure(new ResponseException(500, NGSIConstants.ERROR_UNEXPECTED_RESULT,
+					// remote returned an error status with no ProblemDetails body: surface the actual
+					// remote status code in the distributed-op result (NGSI-LD 6.3.x), not a synthetic 500.
+					result.addFailure(new ResponseException(statusCode, NGSIConstants.ERROR_UNEXPECTED_RESULT,
 							NGSIConstants.ERROR_UNEXPECTED_RESULT_NULL_TITLE, statusCode, remoteHost, attrs));
 
 				} else {

@@ -471,9 +471,10 @@ public class EntityService implements CSourceHandler {
 	}
 
 	public Uni<NGSILDOperationResult> deleteEntity(String tenant, String entityId, Context context,
-			io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders) {
+			io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders, boolean localOnly) {
 		DeleteEntityRequest request = new DeleteEntityRequest(tenant, entityId, zip);
-		Set<RemoteHost> remoteHosts = getRemoteHostsForDelete(request, entityId);
+		// local=true -> do not forward to Context Sources (NGSI-LD 6.3.18).
+		Set<RemoteHost> remoteHosts = localOnly ? Set.of() : getRemoteHostsForDelete(request, entityId);
 
 		// if (remoteHosts.isEmpty()) {
 		// return localDeleteEntity(request, context);
@@ -524,7 +525,29 @@ public class EntityService implements CSourceHandler {
 			request.setDistributed(false);
 		}
 
-		unis.add(localDeleteEntity(request, entityId, context));
+		Uni<NGSILDOperationResult> localUni = localDeleteEntity(request, entityId, context);
+		if (!remoteHosts.isEmpty()) {
+			// Distributed delete: a missing local entity must not abort the whole operation. In
+			// inclusive/exclusive mode the local miss is reported as a per-source failure (-> 207);
+			// in redirect mode the entity is never stored locally, so the miss is ignored (-> 204
+			// when the Context Source(s) succeed). NGSI-LD 5.6.6.
+			boolean anyRedirect = false;
+			for (RemoteHost rh : remoteHosts) {
+				if (rh.regMode() == 2) {
+					anyRedirect = true;
+					break;
+				}
+			}
+			final boolean ignoreLocalMiss = anyRedirect;
+			localUni = localUni.onFailure().recoverWithItem(e -> {
+				NGSILDOperationResult r = new NGSILDOperationResult(AppConstants.DELETE_REQUEST, entityId, tenant);
+				if (!ignoreLocalMiss && e instanceof ResponseException re) {
+					r.addFailure(re);
+				}
+				return r;
+			});
+		}
+		unis.add(localUni);
 		return Uni.combine().all().unis(unis).with(list -> getResult(list));
 
 	}
@@ -762,13 +785,20 @@ public class EntityService implements CSourceHandler {
 
 	public Uni<NGSILDOperationResult> createEntity(String tenant, Map<String, Object> resolved, Context context,
 			io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders) {
+		return createEntity(tenant, resolved, context, headersFromReq, viaHeaders, false);
+	}
+
+	public Uni<NGSILDOperationResult> createEntity(String tenant, Map<String, Object> resolved, Context context,
+			io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders, boolean localOnly) {
 		logger.debug("createMessage() :: started");
 		String entityId = (String) resolved.get(NGSIConstants.JSON_LD_ID);
 		CreateEntityRequest request = new CreateEntityRequest(tenant, resolved, zip);
 		Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> localAndRemote = splitEntity(
 				request, entityId);
 		Map<String, Object> localEntity = localAndRemote.getItem1();
-		Collection<Tuple2<RemoteHost, Map<String, Object>>> remoteEntitiesAndHosts = localAndRemote.getItem2();
+		// local=true (NGSI-LD 6.3.18): handle only on this broker, do not forward to Context Sources.
+		Collection<Tuple2<RemoteHost, Map<String, Object>>> remoteEntitiesAndHosts = localOnly ? List.of()
+				: localAndRemote.getItem2();
 		// if (remoteEntitiesAndHosts.isEmpty()) {
 		// request.setPayload(localEntity);
 		// return createLocalEntity(request, context);

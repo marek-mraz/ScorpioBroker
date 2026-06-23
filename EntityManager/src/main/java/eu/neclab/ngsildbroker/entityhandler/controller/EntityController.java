@@ -75,7 +75,8 @@ public class EntityController {// implements EntityHandlerInterface {
 	@Counted(name = "entity_create_total", description = "Total number of entity create requests", absolute = true)
 	@Timed(name = "entity_create_duration", description = "Duration of entity create requests", unit = MetricUnits.MILLISECONDS, absolute = true)
 	@ConcurrentGauge(name = "entity_create_concurrent", description = "Number of concurrent entity create requests", absolute = true)
-	public Uni<RestResponse<Object>> createEntity(HttpServerRequest req, String bodyStr) {
+	public Uni<RestResponse<Object>> createEntity(HttpServerRequest req, String bodyStr,
+			@QueryParam(value = "local") String localOnlyS) {
 
 		Map<String, Object> body;
 		String tenant = HttpUtils.getTenant(req);
@@ -84,8 +85,11 @@ public class EntityController {// implements EntityHandlerInterface {
 		} catch (DecodeException e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(req)));
 		}
+		// local=true (NGSI-LD 6.3.18): handle only on this broker, do not forward to Context Sources.
+		boolean localOnly;
 		ViaHeaders viaHeaders;
 		try {
+			localOnly = HttpUtils.parseBoolean(localOnlyS);
 			viaHeaders = new ViaHeaders(req.headers().getAll(HttpHeaders.VIA),
 					microServiceUtils.getSourceAlias(tenant));
 		} catch (ResponseException e) {
@@ -115,7 +119,8 @@ public class EntityController {// implements EntityHandlerInterface {
 					}
 
 					return entityService
-							.createEntity(tenant, tuple.getItem2(), tuple.getItem1(), req.headers(), viaHeaders)
+							.createEntity(tenant, tuple.getItem2(), tuple.getItem1(), req.headers(), viaHeaders,
+									localOnly)
 							.onItem().transform(opResult -> {
 								logger.debug("Done creating entity");
 								return HttpUtils.generateCreateResult(opResult, AppConstants.ENTITES_URL);
@@ -415,15 +420,19 @@ public class EntityController {// implements EntityHandlerInterface {
 	@Counted(name = "entity_delete_total", description = "Total number of entity delete requests", absolute = true)
 	@Timed(name = "entity_delete_duration", description = "Duration of entity delete requests", unit = MetricUnits.MILLISECONDS, absolute = true)
 	@ConcurrentGauge(name = "entity_delete_concurrent", description = "Number of concurrent entity delete requests", absolute = true)
-	public Uni<RestResponse<Object>> deleteEntity(HttpServerRequest request, @PathParam("entityId") String entityId) {
+	public Uni<RestResponse<Object>> deleteEntity(HttpServerRequest request, @PathParam("entityId") String entityId,
+			@QueryParam(value = "local") String localOnlyS) {
 		try {
 			HttpUtils.validateUri(entityId);
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 		}
 		String tenant = HttpUtils.getTenant(request);
+		// local=true (NGSI-LD 6.3.18): handle only on this broker, do not forward to Context Sources.
+		boolean localOnly;
 		ViaHeaders viaHeaders;
 		try {
+			localOnly = HttpUtils.parseBoolean(localOnlyS);
 			viaHeaders = new ViaHeaders(request.headers().getAll(HttpHeaders.VIA),
 					microServiceUtils.getSourceAlias(tenant));
 		} catch (ResponseException e) {
@@ -431,7 +440,8 @@ public class EntityController {// implements EntityHandlerInterface {
 		}
 		return ldService.parse(HttpUtils.getAtContext(request)).onItem().transformToUni(context -> {
 			return entityService
-					.deleteEntity(HttpUtils.getTenant(request), entityId, context, request.headers(), viaHeaders)
+					.deleteEntity(HttpUtils.getTenant(request), entityId, context, request.headers(), viaHeaders,
+							localOnly)
 					.onItem().transform(HttpUtils::generateDeleteResult);
 		}).onFailure().recoverWithItem(e -> {
 			return HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request));
