@@ -417,7 +417,11 @@ public class HistoryDAO {
 					}
 					return Uni.createFrom().failure(e);
 				}).onItem().transformToUni(rows -> {
-
+					// no matching entity/attribute/instance was modified -> 404 (NGSI-LD 5.6.14)
+					if (rows.rowCount() == 0) {
+						return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
+								request.getFirstId() + " attribute instance not found"));
+					}
 					return connectionManager
 							.executeQuery(request.getTenant(), "UPDATE " + DBConstants.DBTABLE_TEMPORALENTITY
 									+ " SET modifiedat = $1::text::timestamp WHERE id = $2",
@@ -454,35 +458,29 @@ public class HistoryDAO {
 			tuple = Tuple.of(request.getAttribName(), request.getFirstId(), request.getDatasetId());
 		}
 
-		final String deleteSql = sql;
-		final Tuple deleteTuple = tuple;
-		// capture the attribute @type before deletion so the soft-delete tombstone preserves it
-		return connectionManager.executeQuery(request.getTenant(),
-				"SELECT data #>> '{" + NGSIConstants.JSON_LD_TYPE + ",0}' FROM "
-						+ DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
-						+ " WHERE attributeid=$1 AND temporalentity_id=$2 LIMIT 1",
-				Tuple.of(request.getAttribName(), request.getFirstId()), false)
-				.onItem().transformToUni(typeRows -> {
-					final String attrType = typeRows.rowCount() > 0 ? typeRows.iterator().next().getString(0) : null;
-					return connectionManager.executeQuery(request.getTenant(), deleteSql, deleteTuple, false).onFailure()
-							.recoverWithUni(e -> {
-								if (e instanceof PgException pge) {
-									if (pge.getSqlState().equals(AppConstants.SQL_NOT_FOUND)) {
-										return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
-												request.getFirstId() + " does not exist"));
-									}
-								}
-								return Uni.createFrom().failure(e);
-							}).onItem().transformToUni(rows -> {
-								if (rows.rowCount() == 0) {
-									return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
-											request.getFirstId() + " does not exist"));
-								}
-								return setAttributeDeleted(request, attrType);
-							});
-				});
-
-		// });
+		// temporal-API attribute delete is a HARD delete (NGSI-LD 5.6.13): remove the instances and
+		// bump modifiedat — NO deletedAt tombstone (that is the core-API soft-delete, recorded via the
+		// DELETE_ATTRIBUTE event path in HistoryEntityService).
+		return connectionManager.executeQuery(request.getTenant(), sql, tuple, false).onFailure()
+				.recoverWithUni(e -> {
+					if (e instanceof PgException pge) {
+						if (pge.getSqlState().equals(AppConstants.SQL_NOT_FOUND)) {
+							return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
+									request.getFirstId() + " does not exist"));
+						}
+					}
+					return Uni.createFrom().failure(e);
+				}).onItem().transformToUni(rows -> {
+					if (rows.rowCount() == 0) {
+						return Uni.<io.vertx.mutiny.sqlclient.RowSet<io.vertx.mutiny.sqlclient.Row>>createFrom()
+								.failure(new ResponseException(ErrorType.NotFound,
+										request.getFirstId() + " does not exist"));
+					}
+					return connectionManager.executeQuery(request.getTenant(),
+							"UPDATE " + DBConstants.DBTABLE_TEMPORALENTITY + " SET modifiedat = $1 WHERE id = $2",
+							Tuple.of(LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getSendTimestamp()),
+									ZoneId.of("Z")), request.getFirstId()), false);
+				}).onItem().transformToUni(t -> Uni.createFrom().voidItem());
 	}
 
 	public Uni<Void> deleteAttrInstanceInHistoryEntity(DeleteAttrInstanceHistoryEntityRequest request) {
@@ -499,6 +497,12 @@ public class HistoryDAO {
 					}
 					return Uni.createFrom().failure(e);
 				}).onItem().transformToUni(rows -> {
+					// no matching entity/attribute/instance was deleted -> 404 (NGSI-LD 5.6.15)
+					if (rows.rowCount() == 0) {
+						return Uni.<io.vertx.mutiny.sqlclient.RowSet<io.vertx.mutiny.sqlclient.Row>>createFrom()
+								.failure(new ResponseException(ErrorType.NotFound,
+										request.getFirstId() + " attribute instance not found"));
+					}
 					return connectionManager.executeQuery(request.getTenant(),
 							"UPDATE " + DBConstants.DBTABLE_TEMPORALENTITY
 									+ " SET modifiedat = $1 WHERE id = $2",

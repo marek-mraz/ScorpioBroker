@@ -129,6 +129,7 @@ public class HistoryController {
 		boolean deleteAll;
 		try {
 			HttpUtils.validateUri(entityId);
+			HttpUtils.validateAttribName(attrId);
 			deleteAll = HttpUtils.parseBoolean(deleteAllS);
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
@@ -155,6 +156,8 @@ public class HistoryController {
 		try {
 			payload = new JsonObject(body).getMap();
 			HttpUtils.validateUri(entityId);
+			HttpUtils.validateUri(instanceId);
+			HttpUtils.validateAttribName(attrId);
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 		}
@@ -183,6 +186,8 @@ public class HistoryController {
 			@PathParam("instanceId") String instanceId) {
 		try {
 			HttpUtils.validateUri(entityId);
+			HttpUtils.validateUri(instanceId);
+			HttpUtils.validateAttribName(attrId);
 		} catch (Exception e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
 		}

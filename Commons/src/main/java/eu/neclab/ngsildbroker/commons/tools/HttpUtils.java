@@ -414,6 +414,17 @@ public final class HttpUtils {
 
 	}
 
+	// characters that are invalid in both an NGSI-LD short name (term) and a URI
+	private static final java.util.regex.Pattern INVALID_NAME_CHARS = java.util.regex.Pattern
+			.compile("[\\s<>\"'(){}|\\\\^`\\[\\]]");
+
+	// reject a blank or syntactically invalid attribute name (path segment) with 400
+	public static void validateAttribName(String name) throws ResponseException {
+		if (name == null || name.isBlank() || INVALID_NAME_CHARS.matcher(name).find()) {
+			throw new ResponseException(ErrorType.BadRequestData, "Invalid attribute name");
+		}
+	}
+
 	public static URI validateUri(URI uri) throws ResponseException {
 		if (uri == null) {
 			throw new ResponseException(ErrorType.BadRequestData, "id is not a URI");
@@ -465,6 +476,27 @@ public final class HttpUtils {
 	}
 
 	public static RestResponse<Object> generateUpdateResultResponse(NGSILDOperationResult updateResult) {
+		// noOverwrite left some attributes untouched -> 207 with the NGSI-LD UpdateResult body
+		// {updated:[names], notUpdated:[{attributeName, reason}]} (NGSI-LD 5.6.3)
+		if (!updateResult.getNotUpdated().isEmpty()) {
+			List<String> updated = new ArrayList<>(updateResult.getUpdated());
+			List<Map<String, Object>> notUpd = new ArrayList<>();
+			for (String n : updateResult.getNotUpdated()) {
+				Map<String, Object> e = new HashMap<>();
+				e.put("attributeName", n);
+				e.put("reason", "attribute already exists and the noOverwrite option was set");
+				notUpd.add(e);
+			}
+			Map<String, Object> body = new HashMap<>();
+			body.put("updated", updated);
+			body.put("notUpdated", notUpd);
+			ResponseBuilder<Object> b = new RestResponseBuilderImpl<Object>().status(207)
+					.entity(new JsonObject(body));
+			if (!updateResult.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
+				b = b.header(NGSIConstants.TENANT_HEADER, updateResult.getTenant());
+			}
+			return b.build();
+		}
 		if (updateResult.getFailures().isEmpty()) {
 			ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(204);
 			if (!updateResult.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {

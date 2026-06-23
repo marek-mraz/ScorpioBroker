@@ -1120,17 +1120,23 @@ public class EntityService implements CSourceHandler {
 		return entityDAO.appendToEntity2(request, noOverwrite).onItem().transformToUni(resultAndNotAppended -> {
 			NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.APPEND_REQUEST, entityId,
 					request.getTenant());
-			Set<Attrib> failedToAdd = Sets.newHashSet();
 			Set<String> notAppended = resultAndNotAppended.getItem3();
 			Map<String, Object> payload = request.getPayload().get(entityId).get(0);
 			for (String entry : notAppended) {
 				payload.remove(entry);
-				failedToAdd.add(new Attrib(context.compactIri(entry), null));
+				// noOverwrite-skipped attribute -> notUpdated (expanded name, per the UpdateResult)
+				localResult.addNotUpdated(entry);
+			}
+			if (!notAppended.isEmpty()) {
+				// record the actually-appended attributes (expanded names) for the 207 UpdateResult body
+				for (String attr : payload.keySet()) {
+					if (!attr.startsWith("@") && !NGSIConstants.ENTITY_BASE_PROPS.contains(attr)) {
+						localResult.addUpdated(attr);
+					}
+				}
 			}
 			request.setPrevPayloadFromSingle(entityId, resultAndNotAppended.getItem1());
 			localResult.addSuccess(new CRUDSuccess(null, null, null, payload, context));
-			if (!failedToAdd.isEmpty())
-				localResult.addFailure(new ResponseException(ErrorType.None, "Not added", failedToAdd));
 			try {
 				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
 			} catch (ResponseException e) {

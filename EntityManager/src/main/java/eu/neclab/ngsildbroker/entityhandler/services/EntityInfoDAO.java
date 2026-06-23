@@ -466,11 +466,26 @@ public class EntityInfoDAO {
 				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound));
 			}
 			Row first = rows.iterator().next();
-			// TODO noOverwrite: report skipped attributes as notUpdated (see error.md #12).
-			// Needs instance-level skip detection AND a {updated, notUpdated} body format
-			// with expanded names; the batch path is separate. Deferred.
-			return Uni.createFrom().item(Tuple3.of(first.getJsonObject(0).getMap(),
-					first.getJsonObject(1).getMap(), new HashSet<>(0)));
+			Map<String, Object> oldEntity = first.getJsonObject(0).getMap();
+			Map<String, Object> newEntity = first.getJsonObject(1).getMap();
+			// noOverwrite (NGSI-LD 5.6.3): attributes already present in the entity are left
+			// untouched -> report them as notUpdated (drives a 207). The instance-level skip is
+			// done by ngsild_update_entity; attribute presence in the old entity is the signal.
+			Set<String> notAppended = new HashSet<>(0);
+			if (noOverwrite) {
+				for (String attr : request.getFirstPayload().keySet()) {
+					if (attr.startsWith("@") || NGSIConstants.ENTITY_BASE_PROPS.contains(attr)) {
+						continue;
+					}
+					// instance-aware: the attribute was skipped only if noOverwrite left it
+					// unchanged (a new instance/datasetId would have changed it).
+					Object oldVal = oldEntity.get(attr);
+					if (oldVal != null && oldVal.equals(newEntity.get(attr))) {
+						notAppended.add(attr);
+					}
+				}
+			}
+			return Uni.createFrom().item(Tuple3.of(oldEntity, newEntity, notAppended));
 		});
 
 	}

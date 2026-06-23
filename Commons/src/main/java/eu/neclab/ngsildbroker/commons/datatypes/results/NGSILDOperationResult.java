@@ -22,6 +22,8 @@ public class NGSILDOperationResult {
 	private List<ResponseException> failures = Lists.newArrayList();
 	// attribute names left unchanged by a noOverwrite update (NGSI-LD 5.6.9) -> drives a 207
 	private List<String> notUpdated = Lists.newArrayList();
+	// attribute names actually updated/appended (compacted), for the 207 UpdateResult body
+	private List<String> updated = Lists.newArrayList();
 
 	public NGSILDOperationResult(int operationType, String entityId, String tenant) {
 		super();
@@ -60,6 +62,14 @@ public class NGSILDOperationResult {
 
 	public void addNotUpdated(String attribName) {
 		this.notUpdated.add(attribName);
+	}
+
+	public List<String> getUpdated() {
+		return updated;
+	}
+
+	public void addUpdated(String attribName) {
+		this.updated.add(attribName);
 	}
 
 	public String getEntityId() {
