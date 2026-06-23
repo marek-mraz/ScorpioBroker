@@ -1124,6 +1124,7 @@ public final class HttpUtils {
 	public static RestResponse<Object> generateBatchResult(List<NGSILDOperationResult> t) {
 		boolean isHavingError = false;
 		boolean isHavingSuccess = false;
+		boolean isHavingNotUpdated = false;
 		boolean wasUpdated = true;
 		boolean allConflict = true;
 		boolean sameError = true;
@@ -1132,10 +1133,16 @@ public final class HttpUtils {
 		List<String> createdIds = new ArrayList<>();
 		List<String> successes = new ArrayList<>();
 		List<Map<String, Object>> errors = new ArrayList<>();
+		List<Map<String, Object>> notUpdated = new ArrayList<>();
 		Map<String, Object> result = new HashMap<>();
 		result.put("success", successes);
 		result.put("errors", errors);
 		for (NGSILDOperationResult r : t) {
+			if (!r.getNotUpdated().isEmpty()) {
+				// noOverwrite left some existing attributes untouched -> partial success -> 207
+				isHavingNotUpdated = true;
+				notUpdated.add(r.getJson());
+			}
 			if (!r.getFailures().isEmpty()) {
 				Map<String, Object> error = r.getJson();
 				Map<String, Object> failure = ((List<Map<String, Object>>) error.get("failure")).get(0);
@@ -1184,13 +1191,16 @@ public final class HttpUtils {
 			}
 			return builder.build();
 		}
-		if (!isHavingError && isHavingSuccess) {
+		if (!isHavingError && isHavingSuccess && !isHavingNotUpdated) {
 			if ((opType.equalsIgnoreCase("Upsert") && wasUpdated) || opType.equalsIgnoreCase("Merge")
 					|| opType.equalsIgnoreCase("Delete") || opType.equalsIgnoreCase("Append"))
 				return RestResponse.status(RestResponse.Status.NO_CONTENT);
 			else
 				return new RestResponseBuilderImpl<>().status(201).type(AppConstants.NGB_APPLICATION_JSON)
 						.entity(createdIds).build();
+		}
+		if (isHavingNotUpdated) {
+			result.put("notUpdated", notUpdated);
 		}
 		return new RestResponseBuilderImpl<>().status(207).type(AppConstants.NGB_APPLICATION_JSON).entity(result)
 				.build();

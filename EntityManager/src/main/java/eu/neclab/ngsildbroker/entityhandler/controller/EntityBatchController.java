@@ -239,6 +239,10 @@ public class EntityBatchController {
 			List<NGSILDOperationResult> fails = tuple.getItem1();
 			List<Map<String, Object>> expandedEntities = tuple.getItem2();
 			List<Context> contexts = tuple.getItem3();
+			if (expandedEntities.isEmpty()) {
+				// every entity failed expansion (e.g. invalid JSON-LD) -> 207 with per-entity errors
+				return Uni.createFrom().item(fails).onItem().transform(HttpUtils::generateBatchResult);
+			}
 			return entityService.upsertBatch(tenant, expandedEntities, contexts, localOnly,
 					doReplace, request.headers(), viaHeaders).onItem().transform(opResults -> {
 						opResults.addAll(fails);
@@ -327,6 +331,11 @@ public class EntityBatchController {
 			List<NGSILDOperationResult> fails = tuple.getItem1();
 			List<Map<String, Object>> expandedEntities = tuple.getItem2();
 			List<Context> contexts = tuple.getItem3();
+			if (expandedEntities.isEmpty()) {
+				// every entity failed expansion (e.g. invalid JSON-LD) -> 207 with per-entity errors,
+				// not a whole-request 404 (appendBatch fails on an empty batch)
+				return Uni.createFrom().item(fails).onItem().transform(HttpUtils::generateBatchResult);
+			}
 			return entityService.appendBatch(tenant, expandedEntities, contexts, localOnly,
 					isNoOverwrite, request.headers(), viaHeaders).onItem().transform(opResults -> {
 						opResults.addAll(fails);
@@ -442,6 +451,10 @@ public class EntityBatchController {
 			List<NGSILDOperationResult> fails = tuple.getItem1();
 			List<Map<String, Object>> expandedEntities = tuple.getItem2();
 			List<Context> contexts = tuple.getItem3();
+			if (expandedEntities.isEmpty()) {
+				// every entity failed expansion (e.g. invalid JSON-LD) -> 207 with per-entity errors
+				return Uni.createFrom().item(fails).onItem().transform(HttpUtils::generateBatchResult);
+			}
 			return entityService.mergeBatch(tenant, expandedEntities, contexts, localOnly,
 					isNoOverwrite, request.headers(), viaHeaders).onItem().transform(opResults -> {
 						opResults.addAll(fails);

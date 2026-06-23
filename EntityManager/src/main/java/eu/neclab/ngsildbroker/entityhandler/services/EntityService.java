@@ -1458,6 +1458,24 @@ public class EntityService implements CSourceHandler {
 							result.add(opResult);
 							Map<String, Object> old = (Map<String, Object>) success.get("old");
 							MicroServiceUtils.putIntoIdMap(oldEntities, entityId, old);
+							// noOverwrite (NGSI-LD 5.6.9): attributes already present in the old entity
+							// were left untouched -> report them as notUpdated so the batch returns 207.
+							if (noOverWrite && old != null) {
+								List<Map<String, Object>> submitted = request.getPayload().get(entityId);
+								if (submitted != null) {
+									for (Map<String, Object> subEntity : submitted) {
+										for (String attr : subEntity.keySet()) {
+											if (attr.startsWith("@")
+													|| NGSIConstants.ENTITY_BASE_PROPS.contains(attr)) {
+												continue;
+											}
+											if (old.containsKey(attr)) {
+												opResult.addNotUpdated(attr);
+											}
+										}
+									}
+								}
+							}
 
 						}
 						request.setPrevPayload(oldEntities);
