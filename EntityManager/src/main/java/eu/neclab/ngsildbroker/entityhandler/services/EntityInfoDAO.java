@@ -277,6 +277,16 @@ public class EntityInfoDAO {
 			}
 			targetDatasetId = id == null ? null : id.toString();
 		}
+		// NGSI-LD 5.6.4: a partial update must not change an attribute's type. Only relevant when
+		// the fragment carries an explicit type (value-only fragments never change the type).
+		String fragmentType = null;
+		Object ftObj = ((Map<String, Object>) payloads.get(0)).get(NGSIConstants.JSON_LD_TYPE);
+		if (ftObj instanceof List<?> ftList && !ftList.isEmpty()) {
+			fragmentType = ftList.get(0).toString();
+		} else if (ftObj instanceof String ftStr) {
+			fragmentType = ftStr;
+		}
+
 		tuple = Tuple.of(request.getAttribName(), new JsonArray(payloads), request.getFirstId(), targetDatasetId);
 		String sql = """
 				WITH old_entity AS (
@@ -292,18 +302,45 @@ public class EntityInfoDAO {
 				)
 				RETURNING (SELECT ENTITY FROM old_entity) AS old_entry;
 				""";
-		return connectionManager.executeQuery(request.getTenant(), sql, tuple, false).onItem().transformToUni(rows -> {
-			if (rows.size() == 0) {
-				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
-						"Entity " + request.getFirstId() + " was not found"));
-			}
-			Row first = rows.iterator().next();
-			JsonObject result = first.getJsonObject(0);
-			if (result == null) {
-				return Uni.createFrom().nullItem();
-			}
-			return Uni.createFrom().item(result.getMap());
-		});
+		Uni<Map<String, Object>> doUpdate = connectionManager.executeQuery(request.getTenant(), sql, tuple, false)
+				.onItem().transformToUni(rows -> {
+					if (rows.size() == 0) {
+						return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound,
+								"Entity " + request.getFirstId() + " was not found"));
+					}
+					Row first = rows.iterator().next();
+					JsonObject result = first.getJsonObject(0);
+					if (result == null) {
+						return Uni.createFrom().nullItem();
+					}
+					return Uni.createFrom().item(result.getMap());
+				});
+		if (fragmentType == null) {
+			return doUpdate;
+		}
+		// Reject a type change with 400 (instead of silently applying it and returning 204) when the
+		// targeted instance already exists with a different type. Read-only pre-check: leaves the
+		// update path untouched for matching types / non-existent instances (404 stays 404).
+		final String expectedType = fragmentType;
+		String typeCheckSql = """
+				SELECT elem #>> '{@type,0}' AS old_type
+				FROM ENTITY e, jsonb_array_elements(e.ENTITY->$1) elem
+				WHERE e.id = $2
+				  AND (elem #>> '{https://uri.etsi.org/ngsi-ld/datasetId,0,@id}') IS NOT DISTINCT FROM $3::text
+				LIMIT 1
+				""";
+		Tuple typeCheckTuple = Tuple.of(request.getAttribName(), request.getFirstId(), targetDatasetId);
+		return connectionManager.executeQuery(request.getTenant(), typeCheckSql, typeCheckTuple, false).onItem()
+				.transformToUni(rows -> {
+					if (rows.size() > 0) {
+						String oldType = rows.iterator().next().getString(0);
+						if (oldType != null && !oldType.equals(expectedType)) {
+							return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData,
+									"Attribute type cannot be changed in a partial update"));
+						}
+					}
+					return doUpdate;
+				});
 
 	}
 

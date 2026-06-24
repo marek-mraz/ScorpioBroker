@@ -71,6 +71,25 @@ public class SubscriptionController {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 		}
 
+		// NGSI-LD 5.8.1: jsonldContext must be a URI. A non-absolute value (e.g. "unknownContext") is
+		// invalid input -> 400 BadRequestData, distinct from a resolvable URL that is merely unreachable
+		// (-> 503 LdContextNotAvailable). Validate before expansion, which would otherwise try to
+		// dereference the value and surface a 503.
+		Object jsonldCtx = map.get(NGSIConstants.JSONLD_CONTEXT);
+		if (jsonldCtx instanceof String jsonldCtxStr) {
+			boolean invalid;
+			try {
+				invalid = !new java.net.URI(jsonldCtxStr).isAbsolute();
+			} catch (java.net.URISyntaxException ex) {
+				invalid = true;
+			}
+			if (invalid) {
+				return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+						new ResponseException(ErrorType.BadRequestData, "jsonldContext must be a valid absolute URI"),
+						tenant));
+			}
+		}
+
 		// try {
 		// if (!map.containsKey(NGSIConstants.JSONLD_CONTEXT)) {
 		// Object contextLink;

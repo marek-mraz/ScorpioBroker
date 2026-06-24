@@ -196,7 +196,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 								e.printStackTrace();
 								return Uni.createFrom().failure(e);
 							}).onItem().transformToUni(noti -> {
-								return sendNotification(request, noti, AppConstants.INTERNAL_NOTIFICATION_REQUEST)
+								return deliverNotification(request, noti)
 										.onFailure().recoverWithUni(e -> {
 											e.printStackTrace();
 											return Uni.createFrom().failure(e);
@@ -352,7 +352,15 @@ public class RegistrySubscriptionService implements CSourceHandler {
 			if (notificationOnWorkerThread) {
 				generated = generated.emitOn(Infrastructure.getDefaultWorkerPool());
 			}
-			return generated.onItem().transformToUni(notification -> {
+			return generated.onItem().transformToUni(notification -> deliverNotification(potentialSub, notification));
+		}
+		return Uni.createFrom().voidItem();
+	}
+
+	// Deliver an already-generated cSourceNotification to the subscription endpoint. Kept separate so
+	// the initial-on-subscription notification (built in createSubscription with all matching
+	// registrations) is sent as-is instead of being re-wrapped by a second generateCsourceNotification.
+	private Uni<Void> deliverNotification(SubscriptionRequest potentialSub, Map<String, Object> notification) {
 						NotificationParam notificationParam = potentialSub.getSubscription().getNotification();
 						Uni<Void> toSend;
 						switch (notificationParam.getEndPoint().getUri().getScheme()) {
@@ -436,8 +444,16 @@ public class RegistrySubscriptionService implements CSourceHandler {
 									toSend = ldService
 											.compact(notification, null, potentialSub.getContext(), HttpUtils.opts, -1)
 											.onItem().transformToUni(noti -> {
-												return webClient
-														.post(notificationParam.getEndPoint().getUri().toString())
+												// JSON-LD compaction unwraps a single-element array to the element; the
+												// ContextSourceNotification "data" member must always be a JSON array.
+												Object dataMember = noti.get(NGSIConstants.NGSI_LD_DATA_SHORT);
+												if (dataMember != null && !(dataMember instanceof List)) {
+													noti.put(NGSIConstants.NGSI_LD_DATA_SHORT, List.of(dataMember));
+												}
+												// postAbs: the endpoint URI is absolute (host+port+path); webClient.post(String)
+											// treats it as a request URI on the default host:80 -> Connection refused.
+											return webClient
+														.postAbs(notificationParam.getEndPoint().getUri().toString())
 														.putHeaders(SubscriptionTools.getHeaders(notificationParam,
 																potentialSub.getSubscription().getOtherHead()))
 														.sendJsonObject(new JsonObject(noti)).onFailure().retry()
@@ -509,9 +525,6 @@ public class RegistrySubscriptionService implements CSourceHandler {
 							}
 						}
 						return toSend;
-					});
-		}
-		return Uni.createFrom().voidItem();
 	}
 
 	private Uni<MqttClient> getMqttClient(NotificationParam notificationParam) {
@@ -1277,8 +1290,8 @@ public class RegistrySubscriptionService implements CSourceHandler {
 						data.add(row.getJsonObject(0).getMap());
 					});
 					return SubscriptionTools.generateCsourceNotification(request, data,
-							AppConstants.INTERNAL_NOTIFICATION_REQUEST, ldService).onItem().transformToUni(noti -> {
-								return sendNotification(request, noti, AppConstants.INTERVAL_NOTIFICATION_REQUEST);
+							AppConstants.INTERVAL_NOTIFICATION_REQUEST, ldService).onItem().transformToUni(noti -> {
+								return deliverNotification(request, noti);
 							});
 				}));
 			}

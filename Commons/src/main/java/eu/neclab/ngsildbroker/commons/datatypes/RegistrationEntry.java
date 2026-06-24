@@ -256,7 +256,10 @@ public class RegistrationEntry {
 				sourceAlias = ((List<Map<String, String>>) payload.get(NGSIConstants.NGSI_LD_SOURCE_ALIAS)).get(0)
 						.get(NGSIConstants.JSON_LD_VALUE);
 			} else {
-				sourceAlias = null;
+				// ponytail: alias is no longer persisted into the registration (NGSI-LD round-trip).
+				// Derive an in-memory fallback from the endpoint for loop detection (matches the old
+				// fallbackAlias; the sourceIdentity probe failed against mocks anyway).
+				sourceAlias = host;
 			}
 			RemoteHost remoteHost = new RemoteHost(host, tenant, headers, cSourceId, canDoSingleOp, canDoBatchOp, 0,
 					false, false, sourceAlias);

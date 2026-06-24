@@ -348,7 +348,7 @@ public interface NGSIConstants {
 	public static final String OVERWRITE_OPTION = "overwrite";
 	public static final String REPLACE_OPTION = "replace";
 	public static final String UPDATE_OPTION = "update";
-	public static final String CSOURCE_NOTIFICATION = "ContextSource Notification";
+	public static final String CSOURCE_NOTIFICATION = "ContextSourceNotification";
 	public static final String QUERY_PARAMETER_LAST_N = "lastN";
 	public static final String QUERY_PARAMETER_FIRST_N = "firstN";
 	public static final String FEATURE_COLLECTION = "FeatureCollection";

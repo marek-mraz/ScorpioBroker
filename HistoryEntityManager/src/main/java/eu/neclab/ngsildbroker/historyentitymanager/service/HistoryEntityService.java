@@ -130,17 +130,30 @@ public class HistoryEntityService implements CSourceHandler {
 						return webClient.post(remoteHost.host() + NGSIConstants.NGSI_LD_TEMPORAL_ENTITIES_ENDPOINT)
 								.putHeaders(toFrwd).sendJsonObject(new JsonObject(compacted)).onItemOrFailure()
 								.transform((response, failure) -> {
+									// inclusive/auxiliary forwarding is best-effort: the local broker is
+									// authoritative, so a transport failure to the Context Source must not
+									// downgrade a successful local create to 207/500 (NGSI-LD 6.3.x).
+									if (failure != null && remoteHost.regMode() <= 1) {
+										return new NGSILDOperationResult(AppConstants.CREATE_TEMPORAL_REQUEST,
+												entityId, tenant);
+									}
 									NGSILDOperationResult result = HttpUtils.handleWebResponse(response, failure,
 											ArrayUtils.toArray(201, 204), remoteHost,
 											AppConstants.CREATE_TEMPORAL_REQUEST, entityId,
 											HttpUtils.getAttribsFromCompactedPayload(compacted));
-									if (response.statusCode() == 204) {
+									if (response != null && response.statusCode() == 204) {
 										result.setWasUpdated(true);
 									}
 									return result;
 								});
 					}));
 
+		}
+		// inclusive registrations keep a local copy: persist it too, otherwise a matching Context
+		// Source would mean the entity is never stored locally. For redirect/exclusive, localEntity
+		// is empty here, so only the remote op runs.
+		if (localEntity != null && !localEntity.isEmpty()) {
+			unis.add(0, local);
 		}
 		return Uni.combine().all().unis(unis).with(list -> {
 			NGSILDOperationResult result = new NGSILDOperationResult(AppConstants.CREATE_TEMPORAL_REQUEST, entityId,

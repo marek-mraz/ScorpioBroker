@@ -2167,6 +2167,33 @@ public class EntityService implements CSourceHandler {
 	public Uni<NGSILDOperationResult> replaceAttribute(String tenant, Map<String, Object> resolved, Context context,
 			String entityId, String attrId, String datasetId, io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders) {
 		logger.debug("ReplaceMessage() :: started");
+		// NGSI-LD 5.6.19: when no datasetId query param is given but the replacement fragment is a
+		// single instance carrying a datasetId, replace that specific instance (preserving the other
+		// instances), rather than the default one.
+		if (datasetId == null) {
+			Object attrVal = resolved.get(attrId);
+			Map<String, Object> instance = null;
+			if (attrVal instanceof List<?> l && l.size() == 1 && l.get(0) instanceof Map<?, ?> m0) {
+				instance = (Map<String, Object>) m0;
+			} else if (attrVal instanceof Map<?, ?> m) {
+				instance = (Map<String, Object>) m;
+			}
+			if (instance != null) {
+				Object dsId = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+				Map<String, Object> dsMap = null;
+				if (dsId instanceof List<?> dsList && !dsList.isEmpty() && dsList.get(0) instanceof Map) {
+					dsMap = (Map<String, Object>) dsList.get(0);
+				} else if (dsId instanceof Map) {
+					dsMap = (Map<String, Object>) dsId;
+				}
+				if (dsMap != null) {
+					Object id = dsMap.get(NGSIConstants.JSON_LD_ID);
+					if (id != null) {
+						datasetId = id.toString();
+					}
+				}
+			}
+		}
 		ReplaceAttribRequest request = new ReplaceAttribRequest(tenant, resolved, entityId, attrId, datasetId, zip);
 		Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> localAndRemote = splitEntity(
 				request, entityId);
