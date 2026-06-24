@@ -221,11 +221,35 @@ public class RegistryController {
 	@ConcurrentGauge(name = "registration_patch_concurrent", description = "Number of concurrent registration patch requests", absolute = true)
 	public Uni<RestResponse<Object>> updateCSource(HttpServerRequest request,
 			@PathParam("registrationId") String registrationId, String payload) {
+		// NGSI-LD 5.9.x: a member set to null in a registration update means "remove this member".
+		// JSON-LD expansion drops nulls, so capture the nulled member names from the raw body here.
+		Set<String> nullMembers = Sets.newHashSet();
+		try {
+			for (var e : new JsonObject(payload).getMap().entrySet()) {
+				if (e.getValue() == null && !NGSIConstants.JSON_LD_CONTEXT.equals(e.getKey())) {
+					nullMembers.add(e.getKey());
+				}
+			}
+		} catch (DecodeException ignored) {
+			// let expandBody surface the proper BadRequest below
+		}
+		// NGSI-LD 5.9.x: `information` (and `endpoint`) are mandatory — they must not be removed via null.
+		if (nullMembers.contains(NGSIConstants.CSOURCE_INFORMATION)
+				|| nullMembers.contains(NGSIConstants.CSOURCE_ENDPOINT)) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "A mandatory member cannot be removed"),
+					HttpUtils.getTenant(request)));
+		}
 		return HttpUtils.expandBody(request, payload, AppConstants.CSOURCE_REG_UPDATE_PAYLOAD, ldService).onItem()
 				.transformToUni(tuple -> {
+					Set<String> removeMembers = Sets.newHashSet();
+					for (String m : nullMembers) {
+						removeMembers.add(tuple.getItem1().expandIri(m, false, true, null, null));
+					}
 					return csourceService
-							.updateRegistration(HttpUtils.getTenant(request), registrationId, tuple.getItem2()).onItem()
-							.transform(opResult -> {
+							.updateRegistration(HttpUtils.getTenant(request), registrationId, tuple.getItem2(),
+									removeMembers)
+							.onItem().transform(opResult -> {
 								return HttpUtils.generateUpdateResultResponse(opResult);
 							});
 				}).onFailure()

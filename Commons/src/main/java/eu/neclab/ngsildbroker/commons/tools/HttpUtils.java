@@ -1379,8 +1379,11 @@ public final class HttpUtils {
 				.transformToUni(context -> {
 					return ldService.expand(context, originalPayload, opts, payloadType, atContextAllowed).onItem()
 							.transform(list -> {
-
-								Map<String, Object> resolved = (Map<String, Object>) list.get(0);
+								// A patch body whose only members are null (e.g. {"expiresAt": null} to remove a
+								// member) expands to an empty list — don't index into it (was a 500). The
+								// removed members are recovered from the raw payload by the caller.
+								Map<String, Object> resolved = list.isEmpty() ? new HashMap<>()
+										: (Map<String, Object>) list.get(0);
 								return Tuple2.of(context, resolved);
 							});
 

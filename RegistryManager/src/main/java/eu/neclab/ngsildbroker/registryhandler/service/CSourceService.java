@@ -181,9 +181,9 @@ public class CSourceService {
 	}
 
 	public Uni<NGSILDOperationResult> updateRegistration(String tenant, String registrationId,
-			Map<String, Object> entry) {
+			Map<String, Object> entry, Set<String> removeMembers) {
 		AppendCSourceRequest request = new AppendCSourceRequest(tenant, registrationId, entry);
-		return cSourceInfoDAO.updateRegistration(request).onItem().transformToUni(updatedReg -> {
+		return cSourceInfoDAO.updateRegistration(request, removeMembers).onItem().transformToUni(updatedReg -> {
 			request.setPayload(updatedReg);
 			try {
 				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, emitter, objectMapper);

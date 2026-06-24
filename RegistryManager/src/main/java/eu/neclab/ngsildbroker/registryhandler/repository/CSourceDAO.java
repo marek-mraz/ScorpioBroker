@@ -137,10 +137,15 @@ public class CSourceDAO {
 				Tuple.of(new JsonObject(request.getPayload())), true);
 	}
 
-	public Uni<Map<String, Object>> updateRegistration(AppendCSourceRequest request) {
+	public Uni<Map<String, Object>> updateRegistration(AppendCSourceRequest request, Set<String> removeMembers) {
+		// `reg - $3::text[]` drops members the update set to null (NGSI-LD member removal); the `|| $1`
+		// then merges the remaining (non-null) members. Empty removal array leaves reg untouched.
+		String[] toRemove = (removeMembers == null) ? new String[0] : removeMembers.toArray(new String[0]);
+		Tuple tuple = Tuple.of(new JsonObject(request.getPayload()), request.getId());
+		tuple.addArrayOfString(toRemove);
 		return connectionManager
-				.executeQuery(request.getTenant(), "UPDATE csource SET reg=reg || $1 where c_id=$2 RETURNING reg",
-						Tuple.of(new JsonObject(request.getPayload()), request.getId()), false)
+				.executeQuery(request.getTenant(),
+						"UPDATE csource SET reg=(reg - $3::text[]) || $1 where c_id=$2 RETURNING reg", tuple, false)
 				.onItem()
 				.transformToUni(rows -> {
 					if (rows.size() == 0) {

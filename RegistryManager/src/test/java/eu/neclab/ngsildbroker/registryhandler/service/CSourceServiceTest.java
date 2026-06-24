@@ -209,18 +209,18 @@ public class CSourceServiceTest {
 		Uni<Void> kafkaResponse = Uni.createFrom().nullItem();
 		when(kafkaSenderInterface.send(any(String.class))).thenReturn(kafkaResponse);
 
-		when(cSourceInfoDAO.updateRegistration(any()))
+		when(cSourceInfoDAO.updateRegistration(any(), any()))
 				.thenReturn(Uni.createFrom().failure(new RuntimeException("Something went wrong")));
 
 		Uni<NGSILDOperationResult> resultUni = CSourceService.updateRegistration(tenant, csorceRegistrationId,
-				resolved);
+				resolved, java.util.Set.of());
 
 		Throwable throwable = assertThrows(CompletionException.class, () -> resultUni.await().indefinitely());
 		ResponseException responseException = (ResponseException) throwable.getCause();
 
 		assertEquals(500, responseException.getErrorCode());
 		assertEquals("Something went wrong", responseException.getDetail());
-		verify(cSourceInfoDAO, times(1)).updateRegistration(any());
+		verify(cSourceInfoDAO, times(1)).updateRegistration(any(), any());
 
 	}
 
