@@ -180,7 +180,9 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					"expiresAt must not be in the past"));
 		}
 
-		SubscriptionTools.setInitTimesSentAndFailed(request);
+		// Do NOT seed timesSent/timesFailed=0 into a fresh csource subscription: per NGSI-LD these
+		// notification stats must only appear once a notification has actually been (attempted to be)
+		// sent. The increment SQL is COALESCE-safe, so it works without a pre-seeded value.
 		return regDAO.createSubscription(request).onItem().transformToUni(t -> {
 			if (isIntervalSub(request)) {
 				this.tenant2subscriptionId2IntervalSubscription.put(request.getTenant(), request.getId(), request);
@@ -209,6 +211,15 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					rows.forEach(row -> {
 						data.add(row.getJsonObject(0).getMap());
 					});
+					// NGSI-LD 5.11.x: like entity subscriptions, only fire the initial cSourceNotification
+					// when there is matching data. A no-match subscription must not emit an empty
+					// notification (which would otherwise seed timesSent/timesFailed on a fresh sub).
+					if (data.isEmpty()) {
+						NGSILDOperationResult result = new NGSILDOperationResult(
+								AppConstants.CREATE_SUBSCRIPTION_REQUEST, request.getId(), tenant);
+						result.addSuccess(new CRUDSuccess(null, null, request.getId(), Sets.newHashSet()));
+						return Uni.createFrom().item(result);
+					}
 					return SubscriptionTools.generateCsourceNotification(request, data,
 							AppConstants.INTERNAL_NOTIFICATION_REQUEST, ldService).onFailure().recoverWithUni(e -> {
 								e.printStackTrace();

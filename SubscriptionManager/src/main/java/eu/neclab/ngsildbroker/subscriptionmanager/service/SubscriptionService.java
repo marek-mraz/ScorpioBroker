@@ -1349,23 +1349,36 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	}
 
 	private void putOldAttribFromDelete(Map<String, Object> oldEntry, long timeStamp) {
-		oldEntry.put(NGSIConstants.NGSI_LD_DELETED_AT,
-				List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME, NGSIConstants.JSON_LD_VALUE,
-						SerializationTools.toDateTimeString(timeStamp))));
+		// NGSI-LD showChanges (5.8.6): a deleted attribute is shown with the null value sentinel and
+		// the previous value/object/... — NOT a deletedAt member.
 		if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_VALUE, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_VALUE));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_VALUE,
+					List.of(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_OBJECT, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_OBJECT));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_OBJECT,
+					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_JSON)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_JSON, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_JSON));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_JSON, List.of(Map.of(NGSIConstants.JSON_LD_TYPE,
+					NGSIConstants.JSON_LD_JSON, NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_LANGUAGE_MAP, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP, List.of(Map.of(NGSIConstants.JSON_LD_VALUE,
+					NGSIConstants.NGSI_LD_NULL, NGSIConstants.JSON_LD_LANGUAGE, NGSIConstants.JSON_LD_NONE)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_OJBECT_LIST, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_OBJECT,
+					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_LIST)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_VALUE_LIST, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_LIST));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_VALUE,
+					List.of(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_VOCAB)) {
 			oldEntry.put(NGSIConstants.PREVIOUS_VOCAB, oldEntry.remove(NGSIConstants.NGSI_LD_HAS_VOCAB));
+			oldEntry.put(NGSIConstants.NGSI_LD_HAS_VOCAB,
+					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
 		}
 
 	}

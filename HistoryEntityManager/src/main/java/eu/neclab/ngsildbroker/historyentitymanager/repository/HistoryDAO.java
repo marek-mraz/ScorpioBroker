@@ -102,9 +102,18 @@ public class HistoryDAO {
 				.transformToUni(rows -> {
 					List<Tuple> batch = Lists.newArrayList();
 					List<Tuple> batchWithLocation = Lists.newArrayList();
+					// NGSI-LD 5.6.11 upsert: a (re-)posted instance carrying an observedAt replaces the
+					// existing instance with the same attribute + observedAt + datasetId (default dataset
+					// included), rather than piling up a duplicate. Harmless on a fresh create (matches none).
+					List<Tuple> dedupBatch = Lists.newArrayList();
 					for (Entry<String, Object> entry : payload.entrySet()) {
 						List<Map<String, Object>> entries = (List<Map<String, Object>>) entry.getValue();
 						for (Map<String, Object> attribEntry : entries) {
+							String observedAt = getInstanceObservedAt(attribEntry);
+							if (observedAt != null) {
+								dedupBatch.add(Tuple.of(request.getFirstId(), entry.getKey(), observedAt,
+										getInstanceDatasetId(attribEntry)));
+							}
 							attribEntry.put(NGSIConstants.NGSI_LD_INSTANCE_ID, List
 									.of(Map.of(NGSIConstants.JSON_LD_ID,
 											"urn:ngsi-ld:Instance:" + UUID.randomUUID().toString())));
@@ -118,24 +127,53 @@ public class HistoryDAO {
 						}
 					}
 
-					Uni<RowSet<Row>> uni1 = Uni.createFrom().nullItem();
-					if (!batch.isEmpty()) {
-						uni1 = connectionManager.executeBatchQuery(request.getTenant(),
-								"INSERT INTO " + DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
-										+ " (temporalentity_id, attributeid, data) VALUES ($1, $2, $3::jsonb)",
-								batch, true);
+					Uni<RowSet<Row>> uniDedup = Uni.createFrom().nullItem();
+					if (!dedupBatch.isEmpty()) {
+						uniDedup = connectionManager.executeBatchQuery(request.getTenant(),
+								"DELETE FROM " + DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
+										+ " WHERE temporalentity_id=$1 AND attributeid=$2 AND observedat=$3::text::timestamp"
+										+ " AND (data #>> '{" + NGSIConstants.NGSI_LD_DATA_SET_ID + ",0,"
+										+ NGSIConstants.JSON_LD_ID + "}') IS NOT DISTINCT FROM $4",
+								dedupBatch, true);
 					}
-					Uni<RowSet<Row>> uni2 = Uni.createFrom().nullItem();
-					if (!batchWithLocation.isEmpty()) {
-						uni2 = connectionManager.executeBatchQuery(request.getTenant(),
-								"INSERT INTO " + DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
-										+ " (temporalentity_id, attributeid, data, location) VALUES ($1, $2, $3::jsonb, ST_SetSRID(ST_GeomFromGeoJSON(getGeoJson($4)), 4326))",
-								batchWithLocation, true);
-					}
-					return Uni.combine().all().unis(uni1, uni2).discardItems().onItem()
-							.transform(v -> !rows.iterator().next().getBoolean(0));
+					// run the dedup DELETE before the inserts so a re-posted instance supersedes the old one
+					return uniDedup.onItem().transformToUni(ignored -> {
+						Uni<RowSet<Row>> uni1 = Uni.createFrom().nullItem();
+						if (!batch.isEmpty()) {
+							uni1 = connectionManager.executeBatchQuery(request.getTenant(),
+									"INSERT INTO " + DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
+											+ " (temporalentity_id, attributeid, data) VALUES ($1, $2, $3::jsonb)",
+									batch, true);
+						}
+						Uni<RowSet<Row>> uni2 = Uni.createFrom().nullItem();
+						if (!batchWithLocation.isEmpty()) {
+							uni2 = connectionManager.executeBatchQuery(request.getTenant(),
+									"INSERT INTO " + DBConstants.DBTABLE_TEMPORALENTITY_ATTRIBUTEINSTANCE
+											+ " (temporalentity_id, attributeid, data, location) VALUES ($1, $2, $3::jsonb, ST_SetSRID(ST_GeomFromGeoJSON(getGeoJson($4)), 4326))",
+									batchWithLocation, true);
+						}
+						return Uni.combine().all().unis(uni1, uni2).discardItems();
+					}).onItem().transform(v -> !rows.iterator().next().getBoolean(0));
 
 				});
+	}
+
+	private static String getInstanceObservedAt(Map<String, Object> attribEntry) {
+		Object obs = attribEntry.get(NGSIConstants.NGSI_LD_OBSERVED_AT);
+		if (obs instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m) {
+			Object v = m.get(NGSIConstants.JSON_LD_VALUE);
+			return v == null ? null : v.toString();
+		}
+		return null;
+	}
+
+	private static String getInstanceDatasetId(Map<String, Object> attribEntry) {
+		Object ds = attribEntry.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		if (ds instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m) {
+			Object v = m.get(NGSIConstants.JSON_LD_ID);
+			return v == null ? null : v.toString();
+		}
+		return null;
 	}
 
 	public Uni<Void> batchUpsertHistoryEntity(BatchRequest request) {

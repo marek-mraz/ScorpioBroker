@@ -123,8 +123,8 @@ public class RegistrySubscriptionInfoDAO {
 		return connectionManager
 				.executeQuery(tenant, "UPDATE registry_subscriptions SET subscription = subscription || ('{\""
 						+ NGSIConstants.NGSI_LD_TIMES_SENT + "\": [{\"" + NGSIConstants.JSON_LD_VALUE
-						+ "\": '|| (subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_SENT + ",0, "
-						+ NGSIConstants.JSON_LD_VALUE + "}')::integer + 1 ||'}],\""
+						+ "\": '|| (COALESCE(subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_SENT + ",0, "
+						+ NGSIConstants.JSON_LD_VALUE + "}','0'))::integer + 1 ||'}],\""
 						+ NGSIConstants.NGSI_LD_LAST_SUCCESS + "\": [{\"" + NGSIConstants.JSON_LD_TYPE + "\": \""
 						+ NGSIConstants.NGSI_LD_DATE_TIME + "\", \"" + NGSIConstants.JSON_LD_VALUE
 						+ "\": \"$1\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
@@ -139,8 +139,8 @@ public class RegistrySubscriptionInfoDAO {
 		return connectionManager
 				.executeQuery(tenant, "UPDATE registry_subscriptions SET subscription = subscription || ('{\""
 						+ NGSIConstants.NGSI_LD_TIMES_FAILED + "\": [{\"" + NGSIConstants.JSON_LD_VALUE
-						+ "\": '|| (subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_FAILED + ",0, "
-						+ NGSIConstants.JSON_LD_VALUE + "}')::integer + 1 ||'}],\""
+						+ "\": '|| (COALESCE(subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_FAILED + ",0, "
+						+ NGSIConstants.JSON_LD_VALUE + "}','0'))::integer + 1 ||'}],\""
 						+ NGSIConstants.NGSI_LD_LAST_FAILURE + "\": [{\"" + NGSIConstants.JSON_LD_TYPE + "\": \""
 						+ NGSIConstants.NGSI_LD_DATE_TIME + "\", \"" + NGSIConstants.JSON_LD_VALUE
 						+ "\": \"$1\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
