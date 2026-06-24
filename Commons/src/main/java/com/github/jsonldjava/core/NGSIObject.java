@@ -385,12 +385,17 @@ class NGSIObject {
 				}
 				break;
 			case AppConstants.CSOURCE_REG_UPDATE_PAYLOAD:
-				if (types != null && !types.isEmpty() && !types.contains(NGSIConstants.NGSI_LD_CSOURCE_REGISTRATION)) {
-					throw new ResponseException(ErrorType.InvalidRequest,
-							"A registration needs type which is "
-									+ NGSIConstants.NGSI_LD_CSOURCE_REGISTRATION_SHORT);
-				}
-				if (activeProperty != null) {
+				// Only validate the registration type at the root of the payload (activeProperty == null);
+				// nested elements (e.g. the entities inside information) carry their own NGSI-LD types
+				// (Vehicle, Building, ...) and must not be checked against the registration type.
+				if (activeProperty == null) {
+					if (types != null && !types.isEmpty()
+							&& !types.contains(NGSIConstants.NGSI_LD_CSOURCE_REGISTRATION)) {
+						throw new ResponseException(ErrorType.BadRequestData,
+								"A registration needs type which is "
+										+ NGSIConstants.NGSI_LD_CSOURCE_REGISTRATION_SHORT);
+					}
+				} else {
 					validateRegistration(payloadType, expandedProperty, activeProperty, api);
 				}
 				break;

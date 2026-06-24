@@ -53,6 +53,7 @@ import eu.neclab.ngsildbroker.commons.datatypes.requests.subscription.UpdateSubs
 import eu.neclab.ngsildbroker.commons.datatypes.results.CRUDSuccess;
 import eu.neclab.ngsildbroker.commons.datatypes.results.NGSILDOperationResult;
 import eu.neclab.ngsildbroker.commons.datatypes.results.QueryResult;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
 import eu.neclab.ngsildbroker.commons.enums.ErrorType;
@@ -1262,6 +1263,31 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	private void mergeAttrib(Map<String, Object> newEntry, Map<String, Object> oldEntry) {
 		newEntry.put(NGSIConstants.NGSI_LD_CREATED_AT, oldEntry.get(NGSIConstants.NGSI_LD_CREATED_AT));
+		boolean isTombstone = false;
+		if (newEntry.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)) {
+			Object hv = newEntry.get(NGSIConstants.NGSI_LD_HAS_VALUE);
+			if (hv instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?,?> m && NGSIConstants.NGSI_LD_NULL.equals(m.get(NGSIConstants.JSON_LD_VALUE))) {
+				isTombstone = true;
+			}
+		}
+		if (isTombstone) {
+			Object type = oldEntry.get(NGSIConstants.JSON_LD_TYPE);
+			if (type != null) {
+				newEntry.put(NGSIConstants.JSON_LD_TYPE, type);
+			}
+			newEntry.remove(NGSIConstants.NGSI_LD_HAS_VALUE);
+			if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP)) {
+				newEntry.put(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP, List.of(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL, NGSIConstants.JSON_LD_LANGUAGE, NGSIConstants.JSON_LD_NONE)));
+			} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)) {
+				newEntry.put(NGSIConstants.NGSI_LD_HAS_OBJECT, List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
+			} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_JSON)) {
+				newEntry.put(NGSIConstants.NGSI_LD_HAS_JSON, List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.JSON_LD_JSON, NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
+			} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_VOCAB)) {
+				newEntry.put(NGSIConstants.NGSI_LD_HAS_VOCAB, List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
+			} else {
+				newEntry.put(NGSIConstants.NGSI_LD_HAS_VALUE, List.of(Map.of(NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
+			}
+		}
 		if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)) {
 			newEntry.put(NGSIConstants.PREVIOUS_VALUE, oldEntry.get(NGSIConstants.NGSI_LD_HAS_VALUE));
 		} else if (oldEntry.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)) {
@@ -1347,6 +1373,14 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	private Uni<Void> sendNotification(SubscriptionRequest potentialSub, List<Map<String, Object>> dataToSend) {
 		if (dataToSend == null || dataToSend.isEmpty()) {
 			return Uni.createFrom().voidItem();
+		}
+		// NGSI-LD 4.5.5 / 5.8.6: a subscription datasetId member filters notified attribute
+		// instances to the matching datasetId(s); a single remaining instance compacts to an object.
+		DataSetIdTerm datasetIdTerm = potentialSub.getSubscription().getDatasetIdTerm();
+		if (datasetIdTerm != null && datasetIdTerm.getIds() != null && !datasetIdTerm.getIds().isEmpty()) {
+			for (Map<String, Object> entity : dataToSend) {
+				datasetIdTerm.calculateEntity(entity);
+			}
 		}
 		long notificationStartTime = System.currentTimeMillis();
 		Uni<Map<String, Object>> generated = SubscriptionTools.generateNotification(potentialSub, dataToSend, ldService);
@@ -1485,14 +1519,16 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						}
 					}
 					if (potentialSub.getSubscription().getThrottling() > 0) {
-						long delay = potentialSub.getSubscription().getThrottling() - (System.currentTimeMillis()
-								- potentialSub.getSubscription().getNotification().getLastNotification());
-						if (delay > 0) {
-							return Uni.createFrom().voidItem().onItem().delayIt().by(Duration.ofMillis(delay)).onItem()
-									.transformToUni(v -> toSend);
-						} else {
-							return toSend;
+						// NGSI-LD 5.8.2.4: throttling is the minimum period between consecutive
+						// notifications — a notification that would fire within that window is
+						// dropped, not deferred-then-sent.
+						long sinceLast = System.currentTimeMillis()
+								- potentialSub.getSubscription().getNotification().getLastNotification();
+						// throttling is expressed in seconds; sinceLast is in milliseconds.
+						if (sinceLast < potentialSub.getSubscription().getThrottling() * 1000L) {
+							return Uni.createFrom().voidItem();
 						}
+						return toSend;
 					}
 					return toSend;
 				});
@@ -1733,6 +1769,15 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						if (!omit.calculateEntity(entity, false, null, null, true)) {
 							it.remove();
 						}
+					}
+				}
+				// NGSI-LD 4.5.5 / 5.8.6: a subscription datasetId member filters notified attribute
+				// instances to the matching datasetId(s) (a single remaining instance then compacts
+				// back to an object).
+				DataSetIdTerm datasetIdTerm = request.getSubscription().getDatasetIdTerm();
+				if (datasetIdTerm != null && datasetIdTerm.getIds() != null && !datasetIdTerm.getIds().isEmpty()) {
+					for (Map<String, Object> entity : dataToNotify) {
+						datasetIdTerm.calculateEntity(entity);
 					}
 				}
 				return dataToNotify;

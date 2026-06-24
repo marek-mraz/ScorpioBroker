@@ -707,33 +707,33 @@ public class SubscriptionTools {
 		Shape entityShape;
 		switch (((List<String>) location.get(NGSIConstants.JSON_LD_TYPE)).get(0)) {
 			case NGSIConstants.NGSI_LD_POINT:
-				List<Map<String, List<Map<String, Double>>>> coordinates = ((List<Map<String, List<Map<String, Double>>>>) location
+				List<Map<String, List<Map<String, Number>>>> coordinates = ((List<Map<String, List<Map<String, Number>>>>) location
 						.get(NGSIConstants.NGSI_LD_COORDINATES));
 				entityShape = shapeFactory.pointXY(
-						coordinates.get(0).get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE),
-						coordinates.get(0).get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE));
+						coordinates.get(0).get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE).doubleValue(),
+						coordinates.get(0).get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE).doubleValue());
 				break;
 			case NGSIConstants.NGSI_LD_LINESTRING:
 				LineStringBuilder lineStringBuilder = shapeFactory.lineString();
-				List<Map<String, List<Map<String, List<Map<String, Double>>>>>> linecoordinates = ((List<Map<String, List<Map<String, List<Map<String, Double>>>>>>) location
+				List<Map<String, List<Map<String, List<Map<String, Number>>>>>> linecoordinates = ((List<Map<String, List<Map<String, List<Map<String, Number>>>>>>) location
 						.get(NGSIConstants.NGSI_LD_COORDINATES));
-				for (Map<String, List<Map<String, Double>>> point : linecoordinates.get(0)
+				for (Map<String, List<Map<String, Number>>> point : linecoordinates.get(0)
 						.get(NGSIConstants.JSON_LD_LIST)) {
 					lineStringBuilder.pointXY(
-							point.get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE),
-							point.get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE));
+							point.get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE).doubleValue(),
+							point.get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE).doubleValue());
 				}
 				entityShape = lineStringBuilder.build();
 				break;
 			case NGSIConstants.NGSI_LD_POLYGON:
 				PolygonBuilder polygonBuilder = shapeFactory.polygon();
-				List<Map<String, List<Map<String, List<Map<String, List<Map<String, Double>>>>>>>> polyogonCoordinates = ((List<Map<String, List<Map<String, List<Map<String, List<Map<String, Double>>>>>>>>) location
+				List<Map<String, List<Map<String, List<Map<String, List<Map<String, Number>>>>>>>> polyogonCoordinates = ((List<Map<String, List<Map<String, List<Map<String, List<Map<String, Number>>>>>>>>) location
 						.get(NGSIConstants.NGSI_LD_COORDINATES));
-				for (Map<String, List<Map<String, Double>>> point : polyogonCoordinates.get(0)
+				for (Map<String, List<Map<String, Number>>> point : polyogonCoordinates.get(0)
 						.get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_LIST)) {
 					polygonBuilder.pointXY(
-							point.get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE),
-							point.get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE));
+							point.get(NGSIConstants.JSON_LD_LIST).get(0).get(NGSIConstants.JSON_LD_VALUE).doubleValue(),
+							point.get(NGSIConstants.JSON_LD_LIST).get(1).get(NGSIConstants.JSON_LD_VALUE).doubleValue());
 				}
 				entityShape = polygonBuilder.build();
 				break;

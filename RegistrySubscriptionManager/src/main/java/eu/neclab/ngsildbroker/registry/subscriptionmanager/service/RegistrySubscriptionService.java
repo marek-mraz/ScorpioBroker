@@ -162,11 +162,22 @@ public class RegistrySubscriptionService implements CSourceHandler {
 
 	public Uni<NGSILDOperationResult> createSubscription(String tenant, Map<String, Object> subscription,
 			Context context) {
+		// NGSI-LD 5.11.2: if no id is provided, the broker assigns one (and returns it via Location).
+		if (!subscription.containsKey(NGSIConstants.JSON_LD_ID)) {
+			subscription.put(NGSIConstants.JSON_LD_ID, "urn:" + java.util.UUID.randomUUID());
+		}
 		SubscriptionRequest request;
 		try {
 			request = new SubscriptionRequest(tenant, subscription, context);
 		} catch (ResponseException e) {
 			return Uni.createFrom().failure(e);
+		}
+
+		// NGSI-LD 5.11.2: an expiresAt in the past is invalid input.
+		Long expiresAt = request.getSubscription().getExpiresAt();
+		if (expiresAt != null && expiresAt < System.currentTimeMillis()) {
+			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData,
+					"expiresAt must not be in the past"));
 		}
 
 		SubscriptionTools.setInitTimesSentAndFailed(request);
@@ -183,6 +194,13 @@ public class RegistrySubscriptionService implements CSourceHandler {
 				syncService = Uni.createFrom().voidItem();
 			}
 			return syncService.onItem().transformToUni(v2 -> {
+				if (request.getSubscription().getIsActive() != null && !request.getSubscription().getIsActive()) {
+					NGSILDOperationResult result = new NGSILDOperationResult(
+							AppConstants.CREATE_SUBSCRIPTION_REQUEST, request.getId(), tenant);
+					result.addSuccess(
+							new CRUDSuccess(null, null, request.getId(), Sets.newHashSet()));
+					return Uni.createFrom().item(result);
+				}
 				return regDAO.getInitialNotificationData(request).onFailure().recoverWithUni(e -> {
 					e.printStackTrace();
 					return Uni.createFrom().failure(e);
@@ -309,8 +327,13 @@ public class RegistrySubscriptionService implements CSourceHandler {
 				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound, "subscription not found"));
 			}
 			Map<String, Object> result = rows.iterator().next().getJsonObject(0).getMap();
-			result.put("status",
-					tenant2subscriptionId2Subscription.get(tenant, subscriptionId).getSubscription().getStatus());
+			SubscriptionRequest req = tenant2subscriptionId2Subscription.get(tenant, subscriptionId);
+			if (req == null) {
+				req = tenant2subscriptionId2IntervalSubscription.get(tenant, subscriptionId);
+			}
+			if (req != null) {
+				result.put(NGSIConstants.STATUS, req.getSubscription().getStatus());
+			}
 			return Uni.createFrom().item(result);
 		});
 	}
@@ -556,69 +579,87 @@ public class RegistrySubscriptionService implements CSourceHandler {
 			return false;
 		}
 
-		for (EntityInfo entityInfo : sub.getEntities()) {
-			if (entityInfo.getTypeTerm().getAllTypes().contains(ALL_TYPES_SUB)) {
-				return true;
+		boolean matched = false;
+		if (sub.getEntities() == null || sub.getEntities().isEmpty()) {
+			matched = true;
+		} else {
+			for (EntityInfo entityInfo : sub.getEntities()) {
+				if (entityInfo.getTypeTerm() != null && entityInfo.getTypeTerm().getAllTypes().contains(ALL_TYPES_SUB)) {
+					return true;
+				}
+				if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdTypeAttrs(entityInfo.getId(), entityInfo.getTypeTerm(), sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null
+						&& sub.getAttributeNames() != null) {
+					if (checkRegForIdPatternTypeAttrs(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
+							sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null) {
+					if (checkRegForIdType(entityInfo.getId(), entityInfo.getTypeTerm(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null) {
+					if (checkRegForIdPatternType(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdAttrs(entityInfo.getId(), sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdPatternAttrs(entityInfo.getIdPattern(), sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
+					if (checkRegForTypeAttrs(entityInfo.getTypeTerm(), sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getTypeTerm() != null) {
+					if (checkRegForType(entityInfo.getTypeTerm(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null) {
+					if (checkRegForIdPattern(entityInfo.getIdPattern(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null) {
+					if (checkRegForId(entityInfo.getId(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				} else if (sub.getAttributeNames() != null) {
+					if (checkRegForAttribs(sub.getAttributeNames(),
+							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
+						matched = true;
+						break;
+					}
+				}
 			}
-			if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
-				if (checkRegForIdTypeAttrs(entityInfo.getId(), entityInfo.getTypeTerm(), sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null
-					&& sub.getAttributeNames() != null) {
-				if (checkRegForIdPatternTypeAttrs(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
-						sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null) {
-				if (checkRegForIdType(entityInfo.getId(), entityInfo.getTypeTerm(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null) {
-				if (checkRegForIdPatternType(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getId() != null && sub.getAttributeNames() != null) {
-				if (checkRegForIdAttrs(entityInfo.getId(), sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getIdPattern() != null && sub.getAttributeNames() != null) {
-				if (checkRegForIdPatternAttrs(entityInfo.getIdPattern(), sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
-				if (checkRegForTypeAttrs(entityInfo.getTypeTerm(), sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getTypeTerm() != null) {
-				if (checkRegForType(entityInfo.getTypeTerm(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getIdPattern() != null) {
-				if (checkRegForIdPattern(entityInfo.getIdPattern(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (entityInfo.getId() != null) {
-				if (checkRegForId(entityInfo.getId(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			} else if (sub.getAttributeNames() != null) {
-				if (checkRegForAttribs(sub.getAttributeNames(),
-						(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-					break;
-				}
-			}
-
+		}
+		if (!matched) {
+			return false;
 		}
 		if (!SubscriptionTools.evaluateGeoQuery(sub.getLdGeoQuery(),
 				(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_LOCATION))) {

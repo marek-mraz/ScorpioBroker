@@ -1429,10 +1429,14 @@ public final class HttpUtils {
 	}
 
 	public static RestResponse<Object> generateSubscriptionResult(NGSILDOperationResult t, Context context) {
-		// TODO Auto-generated method stub
+		return generateSubscriptionResult(t, context, AppConstants.SUBSCRIPTIONS_URL);
+	}
+
+	public static RestResponse<Object> generateSubscriptionResult(NGSILDOperationResult t, Context context,
+			String locationBase) {
 		if (!t.getSuccesses().isEmpty()) {
 			return new RestResponseBuilderImpl<Object>().status(201)
-					.header(jakarta.ws.rs.core.HttpHeaders.LOCATION, AppConstants.SUBSCRIPTIONS_URL + t.getEntityId())
+					.header(jakarta.ws.rs.core.HttpHeaders.LOCATION, locationBase + t.getEntityId())
 					.build();
 		}
 		return null;

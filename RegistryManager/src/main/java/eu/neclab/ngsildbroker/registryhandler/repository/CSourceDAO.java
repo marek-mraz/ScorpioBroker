@@ -166,11 +166,11 @@ public class CSourceDAO {
 		int dollar = 1;
 		Tuple tuple = Tuple.tuple();
 		if (ids != null) {
-			sql.append("(e_id =any($");
+			sql.append("((e_id IS NULL AND e_id_p IS NULL) OR e_id = ANY($");
 			sql.append(dollar);
-			sql.append(") or e_id is null) and (e_id_p is null or e_id_p like any($");
+			sql.append(") OR (e_id_p IS NOT NULL AND EXISTS (SELECT 1 FROM unnest($");
 			sql.append(dollar);
-			sql.append("))");
+			sql.append("::text[]) AS i WHERE i ~ e_id_p)))");
 			tuple.addArrayOfString(ids.toArray(new String[0]));
 			dollar++;
 			sqlAdded = true;
@@ -179,9 +179,9 @@ public class CSourceDAO {
 			if (sqlAdded) {
 				sql.append(" and ");
 			}
-			sql.append("(e_id is null or $");
+			sql.append("(e_id IS NULL OR e_id ~ $");
 			sql.append(dollar);
-			sql.append(" ~ e_id)");
+			sql.append(")");
 			tuple.addString(idPattern);
 			dollar++;
 			sqlAdded = true;

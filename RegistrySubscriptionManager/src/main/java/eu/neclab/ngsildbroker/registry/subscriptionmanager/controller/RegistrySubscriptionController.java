@@ -58,9 +58,33 @@ public class RegistrySubscriptionController {
 				.transformToUni(tuple -> {
 					return subService
 							.createSubscription(HttpUtils.getTenant(request), tuple.getItem2(), tuple.getItem1())
-							.onItem().transform(t -> HttpUtils.generateSubscriptionResult(t, tuple.getItem1()));
+							.onItem().transform(t -> HttpUtils.generateSubscriptionResult(t, tuple.getItem1(),
+									AppConstants.CSOURCE_SUBSCRIPTIONS_URL));
 				}).onFailure()
 				.recoverWithItem(e -> HttpUtils.handleControllerExceptions(e, HttpUtils.getTenant(request)));
+	}
+
+	private void fixSub(java.util.Map<String, Object> sub) {
+		java.util.Map<String, Object> notificationParam = ((List<java.util.Map<String, Object>>) sub
+				.get(NGSIConstants.NGSI_LD_NOTIFICATION)).get(0);
+		if (sub.containsKey(NGSIConstants.NGSI_LD_TIMES_SENT)) {
+			notificationParam.put(NGSIConstants.NGSI_LD_TIMES_SENT, sub.remove(NGSIConstants.NGSI_LD_TIMES_SENT));
+		}
+		if (sub.containsKey(NGSIConstants.NGSI_LD_TIMES_FAILED)) {
+			notificationParam.put(NGSIConstants.NGSI_LD_TIMES_FAILED, sub.remove(NGSIConstants.NGSI_LD_TIMES_FAILED));
+		}
+		Object lastNotification = sub.remove(NGSIConstants.NGSI_LD_LAST_NOTIFICATION);
+		Object lastSuccess = sub.remove(NGSIConstants.NGSI_LD_LAST_SUCCESS);
+		Object lastFailure = sub.remove(NGSIConstants.NGSI_LD_LAST_FAILURE);
+		if (lastNotification != null) {
+			notificationParam.put(NGSIConstants.NGSI_LD_LAST_NOTIFICATION, lastNotification);
+			if (lastSuccess != null) {
+				notificationParam.put(NGSIConstants.NGSI_LD_LAST_SUCCESS, lastSuccess);
+			}
+			if (lastFailure != null) {
+				notificationParam.put(NGSIConstants.NGSI_LD_LAST_FAILURE, lastFailure);
+			}
+		}
 	}
 
 	@GET
@@ -96,6 +120,7 @@ public class RegistrySubscriptionController {
 		return ldService.parse(HttpUtils.getAtContext(request)).onItem().transformToUni(ctx -> {
 			return subService.getAllSubscriptions(HttpUtils.getTenant(request), limitTBU, offset).onItem()
 					.transformToUni(subscriptions -> {
+						subscriptions.getData().forEach(sub -> fixSub(sub));
 						return HttpUtils.generateQueryResult(request, subscriptions, finalOptions, null, acceptHeader,
 								false,
 								acceptHeader, null, ctx, ldService, false, microServiceUtils.getGatewayString(),
@@ -130,6 +155,7 @@ public class RegistrySubscriptionController {
 		return ldService.parse(contextHeader).onItem().transformToUni(context -> {
 			return subService.getSubscription(HttpUtils.getTenant(request), subscriptionId).onItem()
 					.transformToUni(subscription -> {
+						fixSub(subscription);
 						return HttpUtils.generateSubscriptionResult(contextHeader, context, acceptHeader, subscription,
 								finalOptions, ldService, true);
 					});

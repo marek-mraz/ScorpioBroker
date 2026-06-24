@@ -244,10 +244,12 @@ public class RegistrationEntry {
 				mode = 1;
 			}
 			long tmpEexpiresAt;
-			if (payload.containsKey(NGSIConstants.NGSI_LD_EXPIRES)) {
-				tmpEexpiresAt = SerializationTools
-						.date2Long(((List<Map<String, String>>) payload.get(NGSIConstants.NGSI_LD_EXPIRES)).get(0)
-								.get(NGSIConstants.JSON_LD_VALUE));
+			List<Map<String, String>> expiresList = payload.containsKey(NGSIConstants.NGSI_LD_EXPIRES)
+					? (List<Map<String, String>>) payload.get(NGSIConstants.NGSI_LD_EXPIRES)
+					: null;
+			// expiresAt:null expands to an empty list (remove expiration) — don't index into it.
+			if (expiresList != null && !expiresList.isEmpty()) {
+				tmpEexpiresAt = SerializationTools.date2Long(expiresList.get(0).get(NGSIConstants.JSON_LD_VALUE));
 			} else {
 				tmpEexpiresAt = -1l;
 			}

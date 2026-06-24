@@ -100,7 +100,7 @@ public class RegistryController {
 		}
 		if (ids == null && type == null && attrs == null && geometry == null && q == null) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
-					new ResponseException(ErrorType.BadRequestData), HttpUtils.getTenant(request)));
+					new ResponseException(ErrorType.BadRequestData, "At least one of id, type, attrs, q or geometry must be provided"), HttpUtils.getTenant(request)));
 		}
 		if (ids != null) {
 			try {

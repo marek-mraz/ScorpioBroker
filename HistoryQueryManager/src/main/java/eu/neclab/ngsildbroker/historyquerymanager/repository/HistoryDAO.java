@@ -703,8 +703,8 @@ public class HistoryDAO {
 		});
 	}
 
-	// ponytail: a core member survives when no pick is set or it is explicitly picked,
-	// and is not explicitly omitted.
+	// A core member survives when no pick is set or it is explicitly picked,
+	// and is not explicitly omitted (mirrors PickTerm.calculateEntity).
 	private static boolean keepCoreMember(String member, Set<String> pickTopLevel, Set<String> omitTopLevel) {
 		if (pickTopLevel != null && !pickTopLevel.contains(member)) {
 			return false;

@@ -189,6 +189,22 @@ public class Subscription implements Serializable {
 						}
 					}
 					break;
+				case NGSIConstants.NGSI_LD_DATA_SET_ID:
+					if (mapValue instanceof List) {
+						Set<String> datasetIds = Sets.newHashSet();
+						for (Map<String, Object> dsEntry : (List<Map<String, Object>>) mapValue) {
+							Object dsId = dsEntry.get(NGSIConstants.JSON_LD_ID);
+							if (dsId instanceof String) {
+								datasetIds.add((String) dsId);
+							}
+						}
+						if (!datasetIds.isEmpty()) {
+							DataSetIdTerm term = new DataSetIdTerm();
+							term.setIds(datasetIds);
+							subscription.setDatasetIdTerm(term);
+						}
+					}
+					break;
 				case NGSIConstants.NGSI_LD_ENTITIES:
 					List<EntityInfo> entities = new ArrayList<EntityInfo>();
 					List<Map<String, Object>> list1 = (List<Map<String, Object>>) mapValue;

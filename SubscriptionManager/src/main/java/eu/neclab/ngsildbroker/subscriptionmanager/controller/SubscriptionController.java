@@ -206,8 +206,27 @@ public class SubscriptionController {
 			if (lastFailure != null) {
 				notificationParam.put(NGSIConstants.NGSI_LD_LAST_FAILURE, lastFailure);
 			}
+			// NGSI-LD 5.2.14 NotificationParams.status: "ok" / "failed", derived from the most
+			// recent delivery outcome (only meaningful once a notification has been attempted).
+			String status;
+			if (lastFailure == null) {
+				status = "ok";
+			} else if (lastSuccess == null) {
+				status = "failed";
+			} else {
+				status = notificationDateValue(lastFailure).compareTo(notificationDateValue(lastSuccess)) >= 0
+						? "failed"
+						: "ok";
+			}
+			notificationParam.put(NGSIConstants.NGSI_LD_STATUS,
+					List.of(Map.of(NGSIConstants.JSON_LD_VALUE, status)));
 		}
 
+	}
+
+	@SuppressWarnings("unchecked")
+	private static String notificationDateValue(Object expandedDate) {
+		return (String) ((List<Map<String, Object>>) expandedDate).get(0).get(NGSIConstants.JSON_LD_VALUE);
 	}
 
 	@Path("/{id}")
