@@ -220,8 +220,11 @@ public class RegistrySubscriptionService implements CSourceHandler {
 						result.addSuccess(new CRUDSuccess(null, null, request.getId(), Sets.newHashSet()));
 						return Uni.createFrom().item(result);
 					}
+					// NGSI-LD 5.11.7: the initial-on-subscription cSourceNotification carries
+					// triggerReason "newlyMatching" (CREATE_REQUEST), not the internal sentinel
+					// (INTERNAL_NOTIFICATION_REQUEST mapped to a null triggerReason → conformance fail).
 					return SubscriptionTools.generateCsourceNotification(request, data,
-							AppConstants.INTERNAL_NOTIFICATION_REQUEST, ldService).onFailure().recoverWithUni(e -> {
+							AppConstants.CREATE_REQUEST, ldService).onFailure().recoverWithUni(e -> {
 								e.printStackTrace();
 								return Uni.createFrom().failure(e);
 							}).onItem().transformToUni(noti -> {
@@ -278,9 +281,31 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					syncService = Uni.createFrom().voidItem();
 				}
 				return syncService.onItem().transformToUni(v2 -> {
-					return Uni.createFrom()
-							.item(new NGSILDOperationResult(AppConstants.UPDATE_SUBSCRIPTION_REQUEST, subscriptionId,
-									tenant));
+					NGSILDOperationResult result = new NGSILDOperationResult(
+							AppConstants.UPDATE_SUBSCRIPTION_REQUEST, subscriptionId, tenant);
+					// NGSI-LD 5.11.7: on a (re)matching subscription update, send a cSourceNotification
+					// listing all currently matching Context Source Registrations (triggerReason
+					// "newlyMatching"). Skip for inactive or interval subscriptions (the latter notify on
+					// their own timer) and never emit an empty notification.
+					Subscription updatedSub = updatedRequest.getSubscription();
+					boolean active = updatedSub.getIsActive() == null || updatedSub.getIsActive();
+					if (!active || isIntervalSub(updatedRequest)) {
+						return Uni.createFrom().item(result);
+					}
+					return regDAO.getInitialNotificationData(updatedRequest).onItem().transformToUni(rows -> {
+						List<Map<String, Object>> data = Lists.newArrayList();
+						rows.forEach(row -> data.add(row.getJsonObject(0).getMap()));
+						if (data.isEmpty()) {
+							return Uni.createFrom().item(result);
+						}
+						return SubscriptionTools
+								.generateCsourceNotification(updatedRequest, data, AppConstants.CREATE_REQUEST, ldService)
+								.onItem().transformToUni(noti -> deliverNotification(updatedRequest, noti)
+										.onItem().transform(v -> result));
+					}).onFailure().recoverWithItem(e -> {
+						logger.debug("failed to send update notification for csource subscription", e);
+						return result;
+					});
 				});
 			});
 		});
@@ -350,7 +375,10 @@ public class RegistrySubscriptionService implements CSourceHandler {
 	}
 
 	public Uni<Void> handleRegistryChange(CSourceBaseRequest message) {
-		Collection<SubscriptionRequest> potentialSubs = tenant2subscriptionId2Subscription.column(message.getTenant())
+		// The table is keyed (row=tenant, column=subscriptionId); all subscriptions of a tenant are its
+		// row, not its column. Using column(tenant) returned nothing, so registry-change notifications
+		// (newlyMatching / updated / noLongerMatching, NGSI-LD 5.11.7) were never sent.
+		Collection<SubscriptionRequest> potentialSubs = tenant2subscriptionId2Subscription.row(message.getTenant())
 				.values();
 		List<Uni<Void>> unis = Lists.newArrayList();
 		for (SubscriptionRequest potentialSub : potentialSubs) {

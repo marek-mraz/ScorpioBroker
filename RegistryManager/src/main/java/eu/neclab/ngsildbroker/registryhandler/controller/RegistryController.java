@@ -186,6 +186,7 @@ public class RegistryController {
 
 	}
 
+
 	@Path("/{registrationId}")
 	@GET
 	@Counted(name = "registration_retrieve_total", description = "Total number of registration retrieve requests", absolute = true)

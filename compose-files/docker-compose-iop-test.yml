@@ -3,6 +3,19 @@
 # docker-compose-java-aaio-kafka-test.yml: apache/kafka uses KAFKA_* env vars
 # (NOT KAFKA_CFG_*, which is the Bitnami prefix the apache image ignores) and
 # must advertise its own container hostname. Scorpio reads BUSHOST/DBHOST.
+#
+# The Scorpio brokers are BUILT FROM SOURCE (image scorpio-local:dev, via
+# AllInOneRunner/src/main/docker/Dockerfile.jvm) — NOT the published java-latest
+# image — so IOP always exercises the current working tree. The Dockerfile only
+# COPYs target/quarkus-app, so build the jar first (kafka profile), then bring the
+# stack up; `docker compose build` reuses the single scorpio-local:dev image for
+# all five brokers. One-liner:
+#   dev/build-image.sh kafka scorpio-local:dev   # mvn clean install + docker build
+#   docker compose -f compose-files/docker-compose-iop-test.yml \
+#                  -f compose-files/docker-compose-iop-test.override.yml up -d
+# (Building v1.8/v1.9 core-context support from source is what lets the brokers
+#  resolve the ETSI test-suite @context locally instead of fetching uri.etsi.org,
+#  which is 403-blocked from inside the containers and otherwise fails compaction.)
 services:
   # ========================================== BROKER 1
   postgres1:
@@ -26,7 +39,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
   scorpio1:
-    image: scorpiobroker/all-in-one-runner:java-latest
+    image: scorpio-local:dev
+    build:
+      context: ../AllInOneRunner
+      dockerfile: src/main/docker/Dockerfile.jvm
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment: { DBHOST: postgres1, BUSHOST: kafka1, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio1:9090" }
     ports: ["9081:9090"]
@@ -54,7 +70,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
   scorpio2:
-    image: scorpiobroker/all-in-one-runner:java-latest
+    image: scorpio-local:dev
+    build:
+      context: ../AllInOneRunner
+      dockerfile: src/main/docker/Dockerfile.jvm
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment: { DBHOST: postgres2, BUSHOST: kafka2, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio2:9090" }
     ports: ["9082:9090"]
@@ -82,7 +101,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
   scorpio3:
-    image: scorpiobroker/all-in-one-runner:java-latest
+    image: scorpio-local:dev
+    build:
+      context: ../AllInOneRunner
+      dockerfile: src/main/docker/Dockerfile.jvm
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment: { DBHOST: postgres3, BUSHOST: kafka3, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio3:9090" }
     ports: ["9083:9090"]
@@ -110,7 +132,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
   scorpio4:
-    image: scorpiobroker/all-in-one-runner:java-latest
+    image: scorpio-local:dev
+    build:
+      context: ../AllInOneRunner
+      dockerfile: src/main/docker/Dockerfile.jvm
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment: { DBHOST: postgres4, BUSHOST: kafka4, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio4:9090" }
     ports: ["9084:9090"]
@@ -138,7 +163,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
   scorpio5:
-    image: scorpiobroker/all-in-one-runner:java-latest
+    image: scorpio-local:dev
+    build:
+      context: ../AllInOneRunner
+      dockerfile: src/main/docker/Dockerfile.jvm
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment: { DBHOST: postgres5, BUSHOST: kafka5, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio5:9090" }
     ports: ["9085:9090"]
