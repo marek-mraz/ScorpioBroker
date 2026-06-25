@@ -167,16 +167,16 @@ public class CSourceServiceTest {
 		Map<String, Object> rowSetMock = mock(Map.class);
 		//when(rowSetMock.rowCount()).thenReturn(1);
 		Uni<Map<String, Object>> uniRowsetMock = Uni.createFrom().item(rowSetMock);
-		when(cSourceInfoDAO.updateRegistration(any())).thenReturn(uniRowsetMock);
+		when(cSourceInfoDAO.updateRegistration(any(), any())).thenReturn(uniRowsetMock);
 
 		Uni<NGSILDOperationResult> resultUni = CSourceService.updateRegistration(tenant, csorceRegistrationId,
-				resolved);
+				resolved, java.util.Set.of());
 		NGSILDOperationResult result = resultUni.await().indefinitely();
 
 		assertEquals(csorceRegistrationId, result.getEntityId());
 		assertEquals(1, result.getSuccesses().size());
 		assertEquals(0, result.getFailures().size());
-		verify(cSourceInfoDAO, times(1)).updateRegistration(any());
+		verify(cSourceInfoDAO, times(1)).updateRegistration(any(), any());
 
 	}
 
@@ -189,17 +189,17 @@ public class CSourceServiceTest {
 		Map<String, Object> rowSetMock = mock(Map.class);
 		//when(rowSetMock.rowCount()).thenReturn(0);
 		Uni<Map<String, Object>> uniRowsetMock = Uni.createFrom().item(rowSetMock);
-		when(cSourceInfoDAO.updateRegistration(any())).thenReturn(uniRowsetMock);
+		when(cSourceInfoDAO.updateRegistration(any(), any())).thenReturn(uniRowsetMock);
 
 		Uni<NGSILDOperationResult> resultUni = CSourceService.updateRegistration(tenant, csorceRegistrationId,
-				resolved);
+				resolved, java.util.Set.of());
 
 		Throwable throwable = assertThrows(CompletionException.class, () -> resultUni.await().indefinitely());
 		ResponseException responseException = (ResponseException) throwable.getCause();
 
 		assertEquals(404, responseException.getErrorCode());
 		assertEquals("Registration not found", responseException.getDetail());
-		verify(cSourceInfoDAO, times(1)).updateRegistration(any());
+		verify(cSourceInfoDAO, times(1)).updateRegistration(any(), any());
 
 	}
 

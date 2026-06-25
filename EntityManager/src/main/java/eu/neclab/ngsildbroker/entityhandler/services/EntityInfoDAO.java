@@ -476,6 +476,37 @@ public class EntityInfoDAO {
 	}
 
 	/**
+	 * Update Attributes (NGSI-LD 5.6.2): only attributes already present in the entity are
+	 * modified; absent ones (incl. scope) are left out (the caller reports them as notUpdated).
+	 * Returns the entity as it was BEFORE the update so the caller can diff old vs. payload.
+	 */
+	public Uni<Map<String, Object>> updateExistingAttribs(UpdateEntityRequest request) {
+
+		String sql = """
+				WITH a AS (
+				    SELECT ENTITY
+				    FROM ENTITY
+				    WHERE ID = $1
+				)
+				UPDATE ENTITY SET entity = ngsild_update_existing_attribs(entity, $2, $3) WHERE ID = $1 RETURNING (SELECT ENTITY FROM a) AS old_entity, ENTITY.entity as new_entity;
+				""";
+
+		Tuple tuple = Tuple.of(request.getFirstId(), new JsonObject(request.getFirstPayload()),
+				!request.isNoOverwrite());
+		return connectionManager.executeQuery(request.getTenant(), sql, tuple, false).onFailure().recoverWithUni(e -> {
+			e.printStackTrace();
+			return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound));
+		}).onItem().transformToUni(rows -> {
+			if (rows.rowCount() == 0) {
+				return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound));
+			}
+			Row first = rows.iterator().next();
+			return Uni.createFrom().item(first.getJsonObject(0).getMap());
+		});
+
+	}
+
+	/**
 	 * 
 	 * @param request
 	 * @param noOverwrite

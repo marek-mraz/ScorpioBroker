@@ -267,11 +267,22 @@ public class PickTerm extends ProjectionTerm {
 	}
 
 	public int toTempSql(StringBuilder query, Tuple tuple, int dollar) {
+		// Only real attributes restrict the attribute-instance join; core members (id/type/scope)
+		// are not attribute ids. A pick naming only core members must still return the entity, so
+		// emit no restriction here and let the result assembly drop the non-picked attributes.
+		Set<String> real = Sets.newHashSet(getAllTopLevelAttribs(true));
+		real.remove(NGSIConstants.JSON_LD_ID);
+		real.remove(NGSIConstants.JSON_LD_TYPE);
+		real.remove(NGSIConstants.NGSI_LD_SCOPE);
+		if (real.isEmpty()) {
+			query.append("1=1");
+			return dollar;
+		}
 		query.append("attributeid = ANY($");
 		query.append(dollar);
 		query.append(')');
 		dollar++;
-		tuple.addArrayOfString(getAllTopLevelAttribs(true).toArray(new String[0]));
+		tuple.addArrayOfString(real.toArray(new String[0]));
 		return dollar;
 	}
 

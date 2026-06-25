@@ -701,6 +701,72 @@ public final class HttpUtils {
 		return "date-time " + start + "-" + end + "/" + size;
 	}
 
+	/**
+	 * NGSI-LD 6.3.10: when a temporal retrieval is truncated (an attribute exceeds the instance
+	 * limit) and attributes occupy DISJOINT time ranges, the response is cut at the attribute
+	 * boundary so it never straddles a time gap (which would silently drop instances within the
+	 * advertised Content-Range). We keep the attribute whose range is first in the query direction
+	 * (earliest for ASC, latest for DESC) and return any attribute lying entirely beyond it as an
+	 * empty instance array. Only fires in the truncation regime, so synchronized/overlapping
+	 * attributes are untouched.
+	 */
+	@SuppressWarnings("unchecked")
+	public static void cutTemporalRangeAtAttributeGap(Object entity, TemporalQueryTerm tq, boolean descending) {
+		if (!(entity instanceof Map)) {
+			return;
+		}
+		Map<String, Object> map = (Map<String, Object>) entity;
+		String timeProp = expandTimeProperty(tq == null ? null : tq.getTimeProperty());
+		if (maxInstancesPerAttr(entity, timeProp) <= TEMPORAL_INSTANCE_LIMIT) {
+			return;
+		}
+		Map<String, String[]> ranges = new HashMap<>();
+		for (Map.Entry<String, Object> e : map.entrySet()) {
+			if (!(e.getValue() instanceof List<?> l) || l.isEmpty() || !(l.get(0) instanceof Map<?, ?> m0)
+					|| !m0.containsKey(timeProp)) {
+				continue;
+			}
+			String min = null, max = null;
+			for (Object inst : l) {
+				if (inst instanceof Map<?, ?> im && im.get(timeProp) instanceof List<?> tl && !tl.isEmpty()
+						&& tl.get(0) instanceof Map<?, ?> tv
+						&& tv.get(NGSIConstants.JSON_LD_VALUE) instanceof String ts) {
+					if (min == null || ts.compareTo(min) < 0) {
+						min = ts;
+					}
+					if (max == null || ts.compareTo(max) > 0) {
+						max = ts;
+					}
+				}
+			}
+			if (min != null) {
+				ranges.put(e.getKey(), new String[] { min, max });
+			}
+		}
+		if (ranges.size() < 2) {
+			return;
+		}
+		String keep = null;
+		String[] keepRange = null;
+		for (Map.Entry<String, String[]> r : ranges.entrySet()) {
+			if (keep == null || (!descending && r.getValue()[0].compareTo(keepRange[0]) < 0)
+					|| (descending && r.getValue()[1].compareTo(keepRange[1]) > 0)) {
+				keep = r.getKey();
+				keepRange = r.getValue();
+			}
+		}
+		for (Map.Entry<String, String[]> r : ranges.entrySet()) {
+			if (r.getKey().equals(keep)) {
+				continue;
+			}
+			boolean cut = !descending ? r.getValue()[0].compareTo(keepRange[1]) > 0
+					: r.getValue()[1].compareTo(keepRange[0]) < 0;
+			if (cut) {
+				map.put(r.getKey(), new ArrayList<>());
+			}
+		}
+	}
+
 	public static String expandTimeProperty(String shortProp) {
 		if (shortProp == null) {
 			return NGSIConstants.NGSI_LD_OBSERVED_AT;

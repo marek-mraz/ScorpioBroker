@@ -638,6 +638,11 @@ public class HistoryDAO {
 					if (aggrQuery == null) {
 						for (int i = 0; i < attribIds.length; i++) {
 							String attribId = attribIds[i];
+							// a core-member-only pick joins all attributes (so the entity survives)
+							// but must return none of them -> drop attributes not explicitly picked.
+							if (pickTopLevel != null && !pickTopLevel.contains(attribId)) {
+								continue;
+							}
 							Object dataItem = attribData.get(i);
 							// ponytail: set partial if lastN truncated this array
 							if (n > 0 && dataItem instanceof List && ((List<?>)dataItem).size() >= n) {

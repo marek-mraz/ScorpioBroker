@@ -774,18 +774,28 @@ public class EntityService implements CSourceHandler {
 
 	private Uni<NGSILDOperationResult> updateLocalEntity(UpdateEntityRequest request, String entityId,
 			Context context) {
-		return entityDAO.updateEntity(request).onItem().transformToUni(previousAndNewEntity -> {
+		return entityDAO.updateExistingAttribs(request).onItem().transformToUni(previousEntity -> {
 
-			request.setPrevPayloadFromSingle(entityId, previousAndNewEntity);
+			NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.UPDATE_REQUEST, entityId,
+					request.getTenant());
+			Map<String, Object> payload = request.getFirstPayload();
+			// Update Attributes: regular attributes are appended/updated, but scope is only
+			// replaced when already present -> if absent it is not added and is reported as
+			// notUpdated (drives a 207). Drop it from the emitted payload too.
+			if (payload.containsKey(NGSIConstants.NGSI_LD_SCOPE)
+					&& !previousEntity.containsKey(NGSIConstants.NGSI_LD_SCOPE)) {
+				payload.remove(NGSIConstants.NGSI_LD_SCOPE);
+				localResult.addNotUpdated(NGSIConstants.NGSI_LD_SCOPE);
+			}
+
+			request.setPrevPayloadFromSingle(entityId, previousEntity);
 			try {
 				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
 			} catch (ResponseException e) {
 				return Uni.createFrom().failure(e);
 			}
 
-			NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.UPDATE_REQUEST, entityId,
-					request.getTenant());
-			localResult.addSuccess(new CRUDSuccess(null, null, null, request.getFirstPayload(), context));
+			localResult.addSuccess(new CRUDSuccess(null, null, null, payload, context));
 			return Uni.createFrom().item(localResult);
 		});
 	}

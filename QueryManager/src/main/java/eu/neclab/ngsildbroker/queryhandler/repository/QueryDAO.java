@@ -1103,7 +1103,10 @@ public class QueryDAO {
 				if (sqlAdded) {
 					query.append(" AND ");
 				}
-				dollar = attrsQuery.toSql(query, tuple, dollar, dataSetIdTerm);
+				// entity match is by attribute existence only; datasetId filters which instances
+				// are projected (handled in construction), so an entity with the attribute but no
+				// matching-datasetId instance is still returned (with that attribute empty). 4.5.5
+				dollar = attrsQuery.toSql(query, tuple, dollar, null);
 				sqlAdded = true;
 			} else if (pickTerm != null) {
 				if (sqlAdded) {
@@ -1139,7 +1142,10 @@ public class QueryDAO {
 				if (sqlAdded) {
 					query.append(" AND ");
 				}
-				dollar = attrsQuery.toSql(query, tuple, dollar, dataSetIdTerm);
+				// entity match is by attribute existence only; datasetId filters which instances
+				// are projected (handled in construction), so an entity with the attribute but no
+				// matching-datasetId instance is still returned (with that attribute empty). 4.5.5
+				dollar = attrsQuery.toSql(query, tuple, dollar, null);
 				sqlAdded = true;
 			}
 			if (pickTerm != null) {

@@ -386,6 +386,8 @@ public class HistoryController {
 						}
 						// NGSI-LD 6.3.10: non-aggregated temporal retrieval -> 206 + Content-Range
 						String contentRange = HttpUtils.temporalContentRange(entity, tempQuery, "DESC".equals(nOrder), n, false);
+						// cut the result at the attribute time-gap so it never straddles a gap
+						HttpUtils.cutTemporalRangeAtAttributeGap(entity, tempQuery, "DESC".equals(nOrder));
 						if (temporalValues) {
 							return HttpUtils.generateResult(headerContext, context, acceptHeader, entity,
 									geometryProperty, finalOptions, null, ldService, null, null, false, false, AppConstants.ENTITY_RETRIEVED_PAYLOAD)
