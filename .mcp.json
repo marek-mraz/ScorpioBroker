@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "pdf-rag": {
+      "type": "stdio",
+      "command": "/workspace/pdf-rag/venv/bin/python",
+      "args": [
+        "/workspace/pdf-rag/server.py"
+      ],
+      "env": {}
+    }
+  }
+}

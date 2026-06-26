@@ -229,15 +229,6 @@
 			<artifactId>quarkus-container-image-docker</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>io.quarkus</groupId>
-			<artifactId>quarkus-kubernetes</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>io.quarkiverse.helm</groupId>
-			<artifactId>quarkus-helm</artifactId>
-			<version>1.2.7</version>
-		</dependency>
-		<dependency>
 			<groupId>io.quarkiverse.systemd.notify</groupId>
 			<artifactId>quarkus-systemd-notify</artifactId>
 			<version>1.0.2</version>

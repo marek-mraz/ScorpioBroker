@@ -26,3 +26,9 @@ repomix.config.json
 scorpiobroker.code-workspace
 scorpiobroker.code-workspace
 .claude/loop.md
+
+pdf-rag
+
+# Generated Quarkus k8s/helm manifests (quarkus-kubernetes/quarkus-helm removed)
+/kubernetes/
+/*/helm/

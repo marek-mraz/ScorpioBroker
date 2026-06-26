@@ -1,3 +1,10 @@
+docker run -it --rm \
+  -v "$(pwd)":/workspace \
+  -v claude-home:/home/dev \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  claude-sandbox
+
+
 # <img src="./img/ScorpioLogo.svg" width="140" align="middle"> Scorpio NGSI-LD Broker
 
 [![FIWARE Core](https://nexus.lab.fiware.org/static/badges/chapters/core.svg)](https://www.fiware.org/developers/catalogue/)
@@ -19,6 +26,10 @@ Hello there!
 
 Welcome to the Scorpio NGSI-LD Broker.
 You are currently in the Scorpios main branch.
+
+> **Building & running from source + the ETSI conformance suite?** See [`dev/README.md`](dev/README.md)
+> for a fast, scripted setup: toolchain install, Postgres + Kafka, the AllInOneRunner, and how to run
+> `etsi_report.sh`. (`dev/install-tools.sh` → `dev/start-deps.sh` → `dev/run-broker.sh in-memory`.)
 
 To get you quickly started you can just choose on of the provided docker-compose files and start it up. 
  - [java based all-in-one runner](https://raw.githubusercontent.com/ScorpioBroker/ScorpioBroker/development-quarkus/compose-files/docker-compose-java-aaio-kafka.yml)

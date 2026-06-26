@@ -1,0 +1,14 @@
+{
+    "hooks": {
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "curl -X POST 'https://gotify.marek-mraz.com/message?token=A-PH4ixMjg2YW5r' -F 'title=Claude Code' -F 'message=Task finished successfully' -F 'priority=5'"
+            }
+          ]
+        }
+      ]
+    }
+  }
