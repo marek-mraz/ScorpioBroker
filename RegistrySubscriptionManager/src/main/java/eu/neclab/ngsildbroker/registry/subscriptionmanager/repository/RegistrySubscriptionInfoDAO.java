@@ -105,7 +105,7 @@ public class RegistrySubscriptionInfoDAO {
 
 	public Uni<RowSet<Row>> getAllSubscriptions(String tenant, int limit, int offset) {
 		return connectionManager.executeQuery(tenant,
-				"SELECT subscription  FROM registry_subscriptions LIMIT $1 OFFSET $2", Tuple.of(limit, offset), false);
+				"SELECT subscription, count(*) over() FROM registry_subscriptions LIMIT $1 OFFSET $2", Tuple.of(limit, offset), false);
 	}
 
 	public Uni<RowSet<Row>> getSubscription(String tenant, String subscriptionId) {

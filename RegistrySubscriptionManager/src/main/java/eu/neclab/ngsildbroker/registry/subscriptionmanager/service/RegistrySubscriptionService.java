@@ -336,13 +336,31 @@ public class RegistrySubscriptionService implements CSourceHandler {
 			List<Map<String, Object>> resultData = new ArrayList<Map<String, Object>>(rows.size());
 			while (it.hasNext()) {
 				next = it.next();
-				resultData.add(next.getJsonObject(0).getMap());
+				Map<String, Object> subMap = next.getJsonObject(0).getMap();
+				// NGSI-LD 5.2.12 / 5.8.2.4: status is read-only and system-computed when querying.
+				// The stored payload has no status, so derive it (expired/active/paused) per subscription
+				// from the in-memory Subscription — mirrors getSubscription() for the retrieve-by-id path.
+				SubscriptionRequest req = tenant2subscriptionId2Subscription.get(tenant,
+						(String) subMap.get(NGSIConstants.JSON_LD_ID));
+				if (req == null) {
+					req = tenant2subscriptionId2IntervalSubscription.get(tenant,
+							(String) subMap.get(NGSIConstants.JSON_LD_ID));
+				}
+				if (req != null) {
+					Long expiresAt = req.getSubscription().getExpiresAt();
+					subMap.put(NGSIConstants.STATUS, (expiresAt != null && expiresAt < System.currentTimeMillis())
+							? "expired"
+							: req.getSubscription().getStatus());
+				}
+				resultData.add(subMap);
 			}
 			result.setData(resultData);
 			if (next == null) {
 				return result;
 			}
-			long resultCount = rows.size();
+			// Total matching count comes from `count(*) over()` (column 1), NOT rows.size() (the page
+			// size) — otherwise leftAfter went negative and the rel="next" pagination Link was dropped.
+			long resultCount = next.getLong(1);
 			result.setCount(resultCount);
 			long leftAfter = resultCount - (offset + limit);
 			if (leftAfter < 0) {
@@ -368,7 +386,14 @@ public class RegistrySubscriptionService implements CSourceHandler {
 				req = tenant2subscriptionId2IntervalSubscription.get(tenant, subscriptionId);
 			}
 			if (req != null) {
-				result.put(NGSIConstants.STATUS, req.getSubscription().getStatus());
+				// NGSI-LD 5.2.12 / 5.8.2.4: status is read-only and system-computed when querying.
+				// Once expiresAt is in the past the subscription is "expired" (no scheduler flips the
+				// stored value, so derive it on read).
+				Long expiresAt = req.getSubscription().getExpiresAt();
+				String status = (expiresAt != null && expiresAt < System.currentTimeMillis())
+						? "expired"
+						: req.getSubscription().getStatus();
+				result.put(NGSIConstants.STATUS, status);
 			}
 			return Uni.createFrom().item(result);
 		});
