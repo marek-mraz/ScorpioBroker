@@ -191,10 +191,36 @@ public class SubscriptionController {
 
 	private void fixSub(Map<String, Object> sub) {
 
+		// On create the broker hosts the supplied @context implicitly and stores a synthesized
+		// jsonldContext URL pointing at /jsonldContexts/ (SubscriptionService). That is an internal
+		// artifact for contacting context sources (NGSI-LD 4.3.6.6); it must not leak into the
+		// subscription representation, where @context travels via the request context / Link header
+		// (NGSI-LD 6.3.5). Drop it so retrieve/query output matches the spec representation.
+		sub.remove(NGSIConstants.NGSI_LD_JSONLD_CONTEXT);
+
+		// notificationTrigger defaults to attributeCreated + attributeUpdated when not supplied
+		// (NGSI-LD 5.2.12). The default is materialized on the Subscription object but not the stored
+		// payload, so reflect it in the representation when absent so retrieve/query match the spec.
+		if (!sub.containsKey(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER)) {
+			sub.put(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER, List.of(
+					Map.of(NGSIConstants.JSON_LD_VALUE,
+							NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_CREATED),
+					Map.of(NGSIConstants.JSON_LD_VALUE,
+							NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_UPDATED)));
+		}
+
 		Map<String, Object> notificationParam = ((List<Map<String, Object>>) sub
 				.get(NGSIConstants.NGSI_LD_NOTIFICATION)).get(0);
-		notificationParam.put(NGSIConstants.NGSI_LD_TIMES_SENT, sub.remove(NGSIConstants.NGSI_LD_TIMES_SENT));
-		notificationParam.put(NGSIConstants.NGSI_LD_TIMES_FAILED, sub.remove(NGSIConstants.NGSI_LD_TIMES_FAILED));
+		// timesSent/timesFailed are output-only and restricted to "Greater than 0" (NGSI-LD 5.2.14.2):
+		// only surface them once present (i.e. a notification has been attempted), never as 0/null.
+		Object timesSent = sub.remove(NGSIConstants.NGSI_LD_TIMES_SENT);
+		if (timesSent != null) {
+			notificationParam.put(NGSIConstants.NGSI_LD_TIMES_SENT, timesSent);
+		}
+		Object timesFailed = sub.remove(NGSIConstants.NGSI_LD_TIMES_FAILED);
+		if (timesFailed != null) {
+			notificationParam.put(NGSIConstants.NGSI_LD_TIMES_FAILED, timesFailed);
+		}
 		Object lastNotification = sub.remove(NGSIConstants.NGSI_LD_LAST_NOTIFICATION);
 		Object lastSuccess = sub.remove(NGSIConstants.NGSI_LD_LAST_SUCCESS);
 		Object lastFailure = sub.remove(NGSIConstants.NGSI_LD_LAST_FAILURE);

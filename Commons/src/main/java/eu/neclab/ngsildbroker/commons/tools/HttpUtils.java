@@ -851,6 +851,10 @@ public final class HttpUtils {
 								}
 							}
 							finalCompacted = compacted.getOrDefault(JsonLdConsts.GRAPH, compacted);
+							if (payloadType == AppConstants.SUBSCRIPTION_CREATE_PAYLOAD
+									|| payloadType == AppConstants.SUBSCRIPTION_UPDATE_PAYLOAD) {
+								enforceSubscriptionArrayMembers(finalCompacted);
+							}
 							if (options != null && options.contains(NGSIConstants.QUERY_PARAMETER_CONCISE_VALUE)) {
 								makeConcise(finalCompacted);
 							}
@@ -900,6 +904,10 @@ public final class HttpUtils {
 								}
 							} else {
 								finalCompacted = compacted;
+							}
+							if (payloadType == AppConstants.SUBSCRIPTION_CREATE_PAYLOAD
+									|| payloadType == AppConstants.SUBSCRIPTION_UPDATE_PAYLOAD) {
+								enforceSubscriptionArrayMembers(finalCompacted);
 							}
 							if (options != null && options.contains(NGSIConstants.QUERY_PARAMETER_CONCISE_VALUE)) {
 								makeConcise(finalCompacted);
@@ -1157,6 +1165,24 @@ public final class HttpUtils {
 			list.forEach(entry -> makeTemporalValues(entry));
 		}
 
+	}
+
+	// NGSI-LD 5.2.12: a Subscription's datasetId is String[]. The term is defined in the @context as
+	// a scalar (@id, for attribute-level use), so a single-element value collapses to a string on
+	// compaction. Re-wrap it as an array at the (top-level) Subscription object(s) only.
+	@SuppressWarnings("unchecked")
+	private static void enforceSubscriptionArrayMembers(Object compacted) {
+		if (compacted instanceof List<?> list) {
+			for (Object element : list) {
+				enforceSubscriptionArrayMembers(element);
+			}
+		} else if (compacted instanceof Map<?, ?> map) {
+			Object datasetId = map.get(NGSIConstants.NGSI_LD_DATA_SET_ID_SHORT);
+			if (datasetId != null && !(datasetId instanceof List)) {
+				((Map<String, Object>) map).put(NGSIConstants.NGSI_LD_DATA_SET_ID_SHORT,
+						Lists.newArrayList(datasetId));
+			}
+		}
 	}
 
 	private static void enforceAttributeList(Object finalCompacted) {

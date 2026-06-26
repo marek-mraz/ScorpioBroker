@@ -528,7 +528,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		} catch (ResponseException e) {
 			return Uni.createFrom().failure(e);
 		}
-		SubscriptionTools.setInitTimesSentAndFailed(request);
+		// Do NOT seed timesSent/timesFailed=0 into a fresh subscription: per NGSI-LD 5.2.14.2
+		// (Table 5.2.14.2-1) these output-only members are restricted to "Greater than 0" and must
+		// only appear once a notification has actually been (attempted to be) sent. The increment
+		// SQL is COALESCE-safe, so it works without a pre-seeded value. Mirrors RegistrySubscriptionService.
 		Map<String, Object> tmp = request.getContext().serialize();
 
 		return localContextService.createImplicitly(tenant, tmp).onItem().transformToUni(contextId -> {

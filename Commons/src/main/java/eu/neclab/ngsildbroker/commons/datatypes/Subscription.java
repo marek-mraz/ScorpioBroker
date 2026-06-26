@@ -370,10 +370,11 @@ public class Subscription implements Serializable {
 			}
 		}
 		if (subscription.getNotificationTrigger().isEmpty()) {
-			// adding default Triggers
+			// NGSI-LD 5.2.12: when notificationTrigger is not present, the default is the
+			// combination "attributeCreated" and "attributeUpdated" (NOT entityCreated/entityUpdated).
 			Set<String> notificationTriggers = subscription.getNotificationTrigger();
-			notificationTriggers.add(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_CREATED);
-			notificationTriggers.add(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_UPDATED);
+			notificationTriggers.add(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_CREATED);
+			notificationTriggers.add(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_UPDATED);
 
 		}
 		validateSub(subscription, update);

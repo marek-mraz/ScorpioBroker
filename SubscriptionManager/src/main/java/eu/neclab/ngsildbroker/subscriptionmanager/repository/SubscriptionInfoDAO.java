@@ -217,8 +217,8 @@ public class SubscriptionInfoDAO {
 
 		String sql = "UPDATE subscriptions SET subscription = jsonb_set(jsonb_set(jsonb_set(subscription, '{"
 				+ NGSIConstants.NGSI_LD_TIMES_SENT + "}', jsonb_build_array(jsonb_build_object('"
-				+ NGSIConstants.JSON_LD_VALUE + "', (subscription #>> '{" + NGSIConstants.NGSI_LD_TIMES_SENT + ",0,"
-				+ NGSIConstants.JSON_LD_VALUE + "}')::integer + 1)), true), '{" + NGSIConstants.NGSI_LD_LAST_SUCCESS
+				+ NGSIConstants.JSON_LD_VALUE + "', COALESCE((subscription #>> '{" + NGSIConstants.NGSI_LD_TIMES_SENT + ",0,"
+				+ NGSIConstants.JSON_LD_VALUE + "}')::integer, 0) + 1)), true), '{" + NGSIConstants.NGSI_LD_LAST_SUCCESS
 				+ "}', jsonb_build_array(jsonb_build_object('" + NGSIConstants.JSON_LD_TYPE + "', '"
 				+ NGSIConstants.NGSI_LD_DATE_TIME + "', '" + NGSIConstants.JSON_LD_VALUE + "', $1::text)), true),'{"
 				+ NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "}', jsonb_build_array(jsonb_build_object('"
@@ -233,8 +233,8 @@ public class SubscriptionInfoDAO {
 	public Uni<Void> updateNotificationFailure(String tenant, String id, String date) {
 		String sql = "UPDATE subscriptions SET subscription = jsonb_set(jsonb_set(jsonb_set(subscription, '{"
 				+ NGSIConstants.NGSI_LD_TIMES_FAILED + "}', jsonb_build_array(jsonb_build_object('"
-				+ NGSIConstants.JSON_LD_VALUE + "', (subscription #>> '{" + NGSIConstants.NGSI_LD_TIMES_FAILED + ",0,"
-				+ NGSIConstants.JSON_LD_VALUE + "}')::integer + 1)), true), '{" + NGSIConstants.NGSI_LD_LAST_FAILURE
+				+ NGSIConstants.JSON_LD_VALUE + "', COALESCE((subscription #>> '{" + NGSIConstants.NGSI_LD_TIMES_FAILED + ",0,"
+				+ NGSIConstants.JSON_LD_VALUE + "}')::integer, 0) + 1)), true), '{" + NGSIConstants.NGSI_LD_LAST_FAILURE
 				+ "}', jsonb_build_array(jsonb_build_object('" + NGSIConstants.JSON_LD_TYPE + "', '"
 				+ NGSIConstants.NGSI_LD_DATE_TIME + "', '" + NGSIConstants.JSON_LD_VALUE + "', $1::text)), true),'{"
 				+ NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "}', jsonb_build_array(jsonb_build_object('"
