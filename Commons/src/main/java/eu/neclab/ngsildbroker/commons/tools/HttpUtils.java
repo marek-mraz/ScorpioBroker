@@ -552,7 +552,11 @@ public final class HttpUtils {
 		if (!result.contains("Accept")) {
 			result.add("Accept", "application/json");
 		}
-		if (tenant != null) {
+		// Default tenant: omit the NGSILD-Tenant header. ")$%^&" (AppConstants.INTERNAL_NULL_KEY) is
+		// Scorpio's internal default-tenant sentinel; forwarding it as a literal header makes the remote
+		// Context Source target a non-existent tenant (NGSI-LD 6.3.14 / 4.14: default tenant => header
+		// omitted; a registration with no tenant targets the default tenant on the source).
+		if (tenant != null && !tenant.equals(AppConstants.INTERNAL_NULL_KEY)) {
 			result.add(NGSIConstants.TENANT_HEADER, tenant);
 		}
 		return result;

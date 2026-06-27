@@ -166,10 +166,16 @@ public class QueryInfos {
 			}
 		}
 
-		if (!attrs.isEmpty()) {
+		// NGSI-LD 5.7.2.4: when split entities is in effect (the default), the Attributes filter shall be
+		// REMOVED before forwarding and applied after aggregation. Forwarding the registration's
+		// propertyNames as an attrs filter wrongly made the remote 404 the entity whenever the entity's
+		// attribute IRIs differed from the registration's @context expansion. So only forward attrs when
+		// NOT distributing/splitting. When forwarded, send FULL expanded IRIs appended RAW (the HTTP layer
+		// URL-encodes once; the type is forwarded the same way) — pre-encoding caused double-encoding.
+		if (!attrs.isEmpty() && !distEntities) {
 			StringBuilder tmp = new StringBuilder();
 			for (String attr : attrs) {
-				tmp.append(URLEncoder.encode(context.compactIri(attr), StandardCharsets.UTF_8));
+				tmp.append(attr);
 				tmp.append(',');
 			}
 			tmp.setLength(tmp.length() - 1);

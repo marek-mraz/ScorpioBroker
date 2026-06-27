@@ -1,173 +1,97 @@
-# IOP (interoperability) test env: 5 independent Scorpio brokers, each with its
-# own postgres + single-node kafka. Kafka services mirror the known-good
-# docker-compose-java-aaio-kafka-test.yml: apache/kafka uses KAFKA_* env vars
-# (NOT KAFKA_CFG_*, which is the Bitnami prefix the apache image ignores) and
-# must advertise its own container hostname. Scorpio reads BUSHOST/DBHOST.
+# ============================================================================
+# SINGLE federation test stack for BOTH the ETSI IOP suite (IOP_TP) and the ETSI
+# DistributedOperations suite (TP/NGSI-LD/DistributedOperations).
 #
-# The Scorpio brokers are BUILT FROM SOURCE (image scorpio-local:dev, via
-# AllInOneRunner/src/main/docker/Dockerfile.jvm) — NOT the published java-latest
-# image — so IOP always exercises the current working tree. The Dockerfile only
-# COPYs target/quarkus-app, so build the jar first (kafka profile), then bring the
-# stack up; `docker compose build` reuses the single scorpio-local:dev image for
-# all five brokers. One-liner:
-#   dev/build-image.sh kafka scorpio-local:dev   # mvn clean install + docker build
-#   docker compose -f compose-files/docker-compose-iop-test.yml \
-#                  -f compose-files/docker-compose-iop-test.override.yml up -d
-# (Building v1.8/v1.9 core-context support from source is what lets the brokers
-#  resolve the ETSI test-suite @context locally instead of fetching uri.etsi.org,
-#  which is 403-blocked from inside the containers and otherwise fails compaction.)
+# 5 independent Scorpio brokers, each fully self-contained: its own Postgres,
+# IN-MEMORY messaging (NO Kafka). One compose file, no override needed.
+#
+# Images are ALWAYS BUILT FROM THE LOCAL REPOSITORY (the `build:` block below),
+# so the stack always exercises the current working tree (incl. local fixes).
+# Dockerfile.jvm only COPYs AllInOneRunner/target/quarkus-app, so the jar must be
+# packaged (in-memory profile) before the docker build. One command does both:
+#   dev/run-iop.sh                 # mvn package (in-memory) + compose up --build + health
+# or manually:
+#   mvn -q -DskipTests -Din-memory -Pin-memory -Dquarkus.profile=in-memory clean install
+#   docker compose -p iop -f compose-files/docker-compose-iop-test.yml up -d --build
+#
+# Why in-memory (NOT kafka):
+#   * Read-your-writes: a query issued right after `POST /csourceRegistrations`
+#     already sees the registration (the ETSI IOP/DistributedOperations tests do
+#     not retry/wait). The Kafka profile defers the QueryManager's federation cache
+#     update to an async consumer, so just-created registrations are invisible.
+#   * Lighter: no Kafka, fits this ~6 GB docker-out-of-docker box.
+#   * Federation BETWEEN brokers is plain HTTP, so dropping Kafka does not affect it.
+#
+# Reachability:
+#   * From this dev container (where the Robot suite runs): by service hostname,
+#     http://scorpio1:9090 .. http://scorpio5:9090 (published 9081-9085 land on the
+#     VM host, NOT this container's localhost — docker-out-of-docker).
+#   * Between brokers (federation endpoints stored in a registration) and from a CI
+#     runner: http://host.docker.internal:9081 .. :9085 (extra_hosts maps
+#     host.docker.internal to the host gateway inside every container; a CI runner
+#     aliases it to 127.0.0.1). Use host.docker.internal in bN_url so the SAME url
+#     works as both the client endpoint and the stored federation endpoint.
+# ============================================================================
+
+x-postgres: &pg
+  image: imresamu/postgis:16-3.5      # multi-arch (official postgis/postgis is amd64-only)
+  environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ngb"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+  mem_limit: 256m
+
+x-scorpio: &scorpio
+  image: scorpio-local:inmem
+  build:
+    context: ../AllInOneRunner
+    dockerfile: src/main/docker/Dockerfile.jvm
+  command: ["java", "-Xmx512m", "--enable-native-access=ALL-UNNAMED", "-jar", "quarkus-run.jar"]
+  mem_limit: 900m
+  extra_hosts: ["host.docker.internal:host-gateway"]
+
 services:
-  # ========================================== BROKER 1
-  postgres1:
-    image: postgis/postgis:14-3.3
-    environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
-  kafka1:
-    image: apache/kafka:3.8.1
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_LOG_RETENTION_MS: 10000
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  postgres1: { <<: *pg }
   scorpio1:
-    image: scorpio-local:dev
-    build:
-      context: ../AllInOneRunner
-      dockerfile: src/main/docker/Dockerfile.jvm
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    environment: { DBHOST: postgres1, BUSHOST: kafka1, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio1:9090" }
+    <<: *scorpio
+    environment: { DBHOST: postgres1, SCORPIO_STARTUPDELAY: 5s, GATEWAY: "http://scorpio1:9090" }
     ports: ["9081:9090"]
-    depends_on: [postgres1, kafka1]
+    depends_on: { postgres1: { condition: service_healthy } }
 
-  # ========================================== BROKER 2
-  postgres2:
-    image: postgis/postgis:14-3.3
-    environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
-  kafka2:
-    image: apache/kafka:3.8.1
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_LOG_RETENTION_MS: 10000
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  postgres2: { <<: *pg }
   scorpio2:
-    image: scorpio-local:dev
-    build:
-      context: ../AllInOneRunner
-      dockerfile: src/main/docker/Dockerfile.jvm
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    environment: { DBHOST: postgres2, BUSHOST: kafka2, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio2:9090" }
+    <<: *scorpio
+    environment: { DBHOST: postgres2, SCORPIO_STARTUPDELAY: 5s, GATEWAY: "http://scorpio2:9090" }
     ports: ["9082:9090"]
-    depends_on: [postgres2, kafka2]
+    depends_on: { postgres2: { condition: service_healthy } }
 
-  # ========================================== BROKER 3
-  postgres3:
-    image: postgis/postgis:14-3.3
-    environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
-  kafka3:
-    image: apache/kafka:3.8.1
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_LOG_RETENTION_MS: 10000
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  postgres3: { <<: *pg }
   scorpio3:
-    image: scorpio-local:dev
-    build:
-      context: ../AllInOneRunner
-      dockerfile: src/main/docker/Dockerfile.jvm
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    environment: { DBHOST: postgres3, BUSHOST: kafka3, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio3:9090" }
+    <<: *scorpio
+    environment: { DBHOST: postgres3, SCORPIO_STARTUPDELAY: 5s, GATEWAY: "http://scorpio3:9090" }
     ports: ["9083:9090"]
-    depends_on: [postgres3, kafka3]
+    depends_on: { postgres3: { condition: service_healthy } }
 
-  # ========================================== BROKER 4
-  postgres4:
-    image: postgis/postgis:14-3.3
-    environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
-  kafka4:
-    image: apache/kafka:3.8.1
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka4:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_LOG_RETENTION_MS: 10000
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  postgres4: { <<: *pg }
   scorpio4:
-    image: scorpio-local:dev
-    build:
-      context: ../AllInOneRunner
-      dockerfile: src/main/docker/Dockerfile.jvm
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    environment: { DBHOST: postgres4, BUSHOST: kafka4, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio4:9090" }
+    <<: *scorpio
+    environment: { DBHOST: postgres4, SCORPIO_STARTUPDELAY: 5s, GATEWAY: "http://scorpio4:9090" }
     ports: ["9084:9090"]
-    depends_on: [postgres4, kafka4]
+    depends_on: { postgres4: { condition: service_healthy } }
 
-  # ========================================== BROKER 5
-  postgres5:
-    image: postgis/postgis:14-3.3
-    environment: { POSTGRES_USER: ngb, POSTGRES_PASSWORD: ngb, POSTGRES_DB: ngb }
-  kafka5:
-    image: apache/kafka:3.8.1
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka5:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_LOG_RETENTION_MS: 10000
-      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  postgres5: { <<: *pg }
   scorpio5:
-    image: scorpio-local:dev
-    build:
-      context: ../AllInOneRunner
-      dockerfile: src/main/docker/Dockerfile.jvm
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    environment: { DBHOST: postgres5, BUSHOST: kafka5, SCORPIO_STARTUPDELAY: 15s, GATEWAY: "http://scorpio5:9090" }
+    <<: *scorpio
+    environment: { DBHOST: postgres5, SCORPIO_STARTUPDELAY: 5s, GATEWAY: "http://scorpio5:9090" }
     ports: ["9085:9090"]
-    depends_on: [postgres5, kafka5]
+    depends_on: { postgres5: { condition: service_healthy } }
+
+# Join the network this dev container is already attached to (dev/start-deps.sh creates it), so the
+# Robot suite running HERE can reach the brokers by hostname (http://scorpio1:9090 ..). The brokers
+# also resolve each other by these hostnames for federation. external = must already exist.
+networks:
+  default:
+    name: compose-files_default
+    external: true

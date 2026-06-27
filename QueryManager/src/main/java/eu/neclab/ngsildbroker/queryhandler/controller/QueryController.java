@@ -215,7 +215,14 @@ public class QueryController {
 		} catch (ResponseException e) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
 		}
-		if (!localOnly && typeQuery == null && attrs == null && geometry == null && qInput == null) {
+		// A federated sub-query (carries a Via header, set by the forwarding broker) is allowed to
+		// discriminate purely by id/idPattern: when broker A forwards a retrieve/query for a known
+		// entity id to a registered Context Source, it need not also know/send the type. Public
+		// requests (no Via header) keep the strict NGSI-LD 5.7.2 rule that id alone is insufficient.
+		boolean federatedSubQuery = request.headers().contains(HttpHeaders.VIA)
+				&& (id != null || idPattern != null);
+		if (!localOnly && typeQuery == null && attrs == null && geometry == null && qInput == null
+				&& !federatedSubQuery) {
 			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
 					new ResponseException(ErrorType.BadRequestData, "At least one of type, attrs, geometry or q is required"), tenant));
 		}
