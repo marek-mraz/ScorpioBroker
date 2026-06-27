@@ -1032,8 +1032,17 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 					case AppConstants.DELETE_REQUEST:
 					case AppConstants.BATCH_DELETE_REQUEST: {
 						List<Map<String, Object>> tmp = Lists.newArrayList();
+						boolean delShowChanges = potentialSub.getSubscription().getNotification().getShowChanges();
 						prevPayloadToUse.values().forEach(payloads -> {
-							payloads.forEach(payload -> {
+							payloads.forEach(origPayload -> {
+								// in-memory messaging passes the payload by reference; deep-copy before mutating so
+								// the EntityManager's concurrent result building (getAttribs) does not hit a CME.
+								Map<String, Object> payload = MicroServiceUtils.deepCopyMap(origPayload);
+								if (delShowChanges) {
+									// entityDeleted + showChanges (NGSI-LD 5.8.6): every attribute is shown with
+									// its previousValue/Object/... and the urn:ngsi-ld:null tombstone.
+									applyShowChangesDelete(payload, message.getSendTimestamp());
+								}
 								payload.put(NGSIConstants.NGSI_LD_DELETED_AT,
 										List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME,
 												NGSIConstants.JSON_LD_VALUE,
@@ -1072,7 +1081,9 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			String entityId = entry.getKey();
 			List<Map<String, Object>> newValues = entry.getValue();
 			if (prevPayloadToUse == null) {
-				addNoOldValues(result, newValues, showChanges);
+				// Entity create (no previous state at all): NGSI-LD 5.8.6 - an entityCreated notification
+				// carries no previousValue even when showChanges is true, so emit the attributes as-is.
+				addNoOldValues(result, newValues, false);
 
 			} else {
 				List<Map<String, Object>> oldValues = prevPayloadToUse.get(entityId);
@@ -1106,7 +1117,9 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			String entityId = entry.getKey();
 			List<Map<String, Object>> newValues = entry.getValue();
 			if (prevPayloadToUse == null) {
-				addNoOldValues(result, newValues, showChanges);
+				// Entity create (no previous state at all): NGSI-LD 5.8.6 - an entityCreated notification
+				// carries no previousValue even when showChanges is true, so emit the attributes as-is.
+				addNoOldValues(result, newValues, false);
 
 			} else {
 				List<Map<String, Object>> oldValues = prevPayloadToUse.get(entityId);
@@ -1331,8 +1344,14 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	// replace an attribute instance's value/object with the urn:ngsi-ld:null tombstone, keeping
 	// only its @type and datasetId (the NGSI-LD null representation used in notifications).
 	private void nullifyDeletedAttrib(Map<String, Object> instance) {
+		// The tombstone must use the member matching the attribute kind (Relationship -> hasObject,
+		// LanguageProperty -> hasLanguageMap, JsonProperty -> hasJSON, VocabProperty -> hasVocab, ...),
+		// mirroring putOldAttribFromDelete; otherwise e.g. a LanguageProperty would wrongly get a value.
 		boolean isRel = instance.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)
 				|| instance.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT_LIST);
+		boolean isLang = instance.containsKey(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP);
+		boolean isJson = instance.containsKey(NGSIConstants.NGSI_LD_HAS_JSON);
+		boolean isVocab = instance.containsKey(NGSIConstants.NGSI_LD_HAS_VOCAB);
 		Object type = instance.get(NGSIConstants.JSON_LD_TYPE);
 		Object dataset = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
 		instance.clear();
@@ -1344,6 +1363,15 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		}
 		if (isRel) {
 			instance.put(NGSIConstants.NGSI_LD_HAS_OBJECT,
+					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
+		} else if (isLang) {
+			instance.put(NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP, List.of(Map.of(NGSIConstants.JSON_LD_VALUE,
+					NGSIConstants.NGSI_LD_NULL, NGSIConstants.JSON_LD_LANGUAGE, NGSIConstants.JSON_LD_NONE)));
+		} else if (isJson) {
+			instance.put(NGSIConstants.NGSI_LD_HAS_JSON, List.of(Map.of(NGSIConstants.JSON_LD_TYPE,
+					NGSIConstants.JSON_LD_JSON, NGSIConstants.JSON_LD_VALUE, NGSIConstants.NGSI_LD_NULL)));
+		} else if (isVocab) {
+			instance.put(NGSIConstants.NGSI_LD_HAS_VOCAB,
 					List.of(Map.of(NGSIConstants.JSON_LD_ID, NGSIConstants.NGSI_LD_NULL)));
 		} else {
 			instance.put(NGSIConstants.NGSI_LD_HAS_VALUE,
@@ -1386,6 +1414,27 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	}
 
+	// On entity delete with showChanges, every attribute instance is rendered with its previousValue/
+	// Object/LanguageMap/... and the urn:ngsi-ld:null tombstone (entity-level deletedAt is added separately).
+	@SuppressWarnings("unchecked")
+	private void applyShowChangesDelete(Map<String, Object> entity, long timeStamp) {
+		for (Entry<String, Object> entry : entity.entrySet()) {
+			String key = entry.getKey();
+			if (key.startsWith("@") || key.equals(NGSIConstants.NGSI_LD_CREATED_AT)
+					|| key.equals(NGSIConstants.NGSI_LD_MODIFIED_AT) || key.equals(NGSIConstants.NGSI_LD_DELETED_AT)
+					|| key.equals(NGSIConstants.NGSI_LD_SCOPE)) {
+				continue;
+			}
+			if (entry.getValue() instanceof List<?> list) {
+				for (Object inst : list) {
+					if (inst instanceof Map) {
+						putOldAttribFromDelete((Map<String, Object>) inst, timeStamp);
+					}
+				}
+			}
+		}
+	}
+
 	private Uni<Void> sendNotification(SubscriptionRequest potentialSub, List<Map<String, Object>> dataToSend) {
 		if (dataToSend == null || dataToSend.isEmpty()) {
 			return Uni.createFrom().voidItem();
@@ -1423,7 +1472,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 														notificationParam.getEndPoint().getUri().getPath().substring(1),
 														Buffer.buffer(
 																SubscriptionTools.getMqttPayload(notificationParam,
-																		notification)),
+																		notification, potentialSub.getSubscription().getOtherHead())),
 														MqttQoS.valueOf(qos), false, false)
 												.onItem().transformToUni(t -> {
 													if (t == 0) {

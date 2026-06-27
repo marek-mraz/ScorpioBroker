@@ -85,6 +85,17 @@ public class SubscriptionTools {
 		for (Map<String, Object> locationGeoProp : locationsGeoProps) {
 			List<Map<String, Object>> locations = (List<Map<String, Object>>) locationGeoProp
 					.get(NGSIConstants.NGSI_LD_HAS_VALUE);
+			if (locations == null) {
+				// A ContextSourceRegistration's location is the bare GeoJSON geometry (no GeoProperty
+				// hasValue wrapper, unlike an Entity's location). If this element is itself a geometry
+				// ({@type, coordinates}), evaluate it directly; otherwise it can't match, skip it.
+				if (locationGeoProp.containsKey(NGSIConstants.JSON_LD_TYPE)
+						&& locationGeoProp.containsKey(NGSIConstants.NGSI_LD_COORDINATES)) {
+					locations = List.of(locationGeoProp);
+				} else {
+					continue;
+				}
+			}
 			for (Map<String, Object> location : locations) {
 				String relation = geoQuery.getGeorel();
 				// String regCoordinatesAsString = Subscription
@@ -435,25 +446,38 @@ public class SubscriptionTools {
 		return new MultiMap(result);
 	}
 
-	public static String getMqttPayload(NotificationParam notificationParam, Map<String, Object> notification)
-			throws Exception {
+	public static String getMqttPayload(NotificationParam notificationParam, Map<String, Object> notification,
+			HeadersMultiMap otherHead) throws Exception {
 		Map<String, Object> result = Maps.newLinkedHashMap();
-		if (notificationParam.getEndPoint().getReceiverInfo() != null
-				&& !notificationParam.getEndPoint().getReceiverInfo().isEmpty()) {
-			result.put(NGSIConstants.METADATA, getMqttMetaData(notificationParam.getEndPoint().getReceiverInfo()));
+		// NGSI-LD 7.2: the MQTT message is { "metadata": {...}, "body": {...} } where
+		// metadata is a key/value OBJECT (not an array) carrying Content-Type, Link and
+		// every receiverInfo KeyValuePair as individual entries.
+		Map<String, Object> metadata = Maps.newLinkedHashMap();
+
+		String accept = notificationParam.getEndPoint().getAccept();
+		if (accept == null) {
+			accept = AppConstants.NGB_APPLICATION_JSON;
 		}
+		metadata.put(HttpHeaders.CONTENT_TYPE, accept);
+
+		// When Content-Type is application/json the @context is conveyed as the Link entry.
+		if (accept.equals(AppConstants.NGB_APPLICATION_JSON) && otherHead != null) {
+			String link = otherHead.get(NGSIConstants.LINK_HEADER);
+			if (link != null) {
+				metadata.put(NGSIConstants.LINK_HEADER, link);
+			}
+		}
+
+		ArrayListMultimap<String, String> receiverInfo = notificationParam.getEndPoint().getReceiverInfo();
+		if (receiverInfo != null) {
+			for (Entry<String, String> entry : receiverInfo.entries()) {
+				metadata.put(entry.getKey(), entry.getValue());
+			}
+		}
+
+		result.put(NGSIConstants.METADATA, metadata);
 		result.put(NGSIConstants.BODY, notification);
 		return JsonUtils.toString(result);
-	}
-
-	private static List<Map<String, String>> getMqttMetaData(ArrayListMultimap<String, String> receiverInfo) {
-		List<Map<String, String>> result = Lists.newArrayList();
-		for (Entry<String, String> entry : receiverInfo.entries()) {
-			Map<String, String> tmp = new HashMap<>(1);
-			tmp.put(entry.getKey(), entry.getValue());
-			result.add(tmp);
-		}
-		return result;
 	}
 
 	public static void setInitTimesSentAndFailed(SubscriptionRequest request) {

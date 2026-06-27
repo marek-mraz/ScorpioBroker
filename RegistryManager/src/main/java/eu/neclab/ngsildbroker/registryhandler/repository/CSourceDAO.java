@@ -191,15 +191,11 @@ public class CSourceDAO {
 			dollar++;
 			sqlAdded = true;
 		}
-		if (qQueryTerm != null) {
-			if (sqlAdded) {
-				sql.append(" AND ");
-			}
-			StringBuilder tempSql = new StringBuilder();
-			dollar = qQueryTerm.toSqlOld(tempSql, dollar, tuple, true, false);
-			sql.append(tempSql.toString().toLowerCase().replace("entity", "csource.reg"));
-			sqlAdded = true;
-		}
+		// q over Context Source Registrations is evaluated in-memory (see CSourceService): the registration's
+		// Context Source Properties are stored as plain values (not Property/hasValue nodes), so the entity
+		// q-to-SQL navigation cannot match them. Candidates are fetched by the other filters here and the q
+		// is applied (and pagination recomputed) on the returned registrations.
+		boolean qInMemory = qQueryTerm != null;
 		if (typeQuery != null) {
 			if (sqlAdded) {
 				sql.append(" and ");
@@ -222,6 +218,7 @@ public class CSourceDAO {
 			sql.append("))");
 			tuple.addArrayOfString(attrsQuery.getAttrs().toArray(new String[0]));
 			dollar++;
+			sqlAdded = true;
 		}
 		if (geoQuery != null) {
 			if (sqlAdded) {
@@ -234,6 +231,7 @@ public class CSourceDAO {
 			} catch (ResponseException e) {
 				return Uni.createFrom().failure(e);
 			}
+			sqlAdded = true;
 		}
 		if (scopeQuery != null) {
 			if (sqlAdded) {
@@ -256,17 +254,26 @@ public class CSourceDAO {
 				current = current.getNext();
 			}
 			sql.append(')');
-
+			sqlAdded = true;
 		}
 
+		// At least one filter must populate the WHERE; if only an (in-memory) q was given, match all.
+		if (!sqlAdded) {
+			sql.append("true");
+		}
 		sql.append(
 				") select csource.reg , (SELECT COUNT(*) FROM a) from a left join csource on a.cs_id = csource.id "
-						+ "group by csource.reg " + "limit $");
-		sql.append(dollar++);
-		tuple.addInteger(limit);
-		sql.append(" offset $");
-		sql.append(dollar++);
-		tuple.addInteger(offset);
+						+ "group by csource.reg");
+		// When q is applied in-memory, fetch the full candidate set (no SQL pagination) so the service can
+		// filter then paginate; otherwise paginate in SQL as usual.
+		if (!qInMemory) {
+			sql.append(" limit $");
+			sql.append(dollar++);
+			tuple.addInteger(limit);
+			sql.append(" offset $");
+			sql.append(dollar++);
+			tuple.addInteger(offset);
+		}
 		if (csf != null) {
 			// if (sqlAdded) {
 			// sql += " and ";

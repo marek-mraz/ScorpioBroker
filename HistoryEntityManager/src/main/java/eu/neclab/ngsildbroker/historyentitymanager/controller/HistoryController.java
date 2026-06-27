@@ -126,6 +126,14 @@ public class HistoryController {
 	public Uni<RestResponse<Object>> deleteAttrib2TemporalEntity(HttpServerRequest request,
 			@PathParam("entityId") String entityId, @PathParam("attrId") String attrId,
 			@QueryParam("datasetId") String datasetId, @QueryParam("deleteAll") String deleteAllS) {
+		// An empty attribute segment (DELETE .../attrs//{instanceId}) is normalized by the router to this
+		// 3-segment route with attrId={instanceId}; the original raw URI still carries the empty segment.
+		// NGSI-LD requires an Attribute name, so reject it as BadRequestData instead of a misleading 404.
+		if (request.uri() != null && request.uri().contains("/attrs//")) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "Attribute name is required"),
+					HttpUtils.getTenant(request)));
+		}
 		boolean deleteAll;
 		try {
 			HttpUtils.validateUri(entityId);

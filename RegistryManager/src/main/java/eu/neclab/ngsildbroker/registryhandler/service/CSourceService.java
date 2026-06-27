@@ -183,8 +183,13 @@ public class CSourceService {
 	public Uni<NGSILDOperationResult> updateRegistration(String tenant, String registrationId,
 			Map<String, Object> entry, Set<String> removeMembers) {
 		AppendCSourceRequest request = new AppendCSourceRequest(tenant, registrationId, entry);
-		return cSourceInfoDAO.updateRegistration(request, removeMembers).onItem().transformToUni(updatedReg -> {
+		// Capture the pre-update registration so the subscription manager can tell newlyMatching /
+		// updated / noLongerMatching apart (NGSI-LD 5.11.7) by comparing match state before vs after.
+		return retrieveRegistration(tenant, registrationId).onFailure().recoverWithItem((Map<String, Object>) null)
+				.onItem().transformToUni(oldReg -> cSourceInfoDAO.updateRegistration(request, removeMembers).onItem()
+						.transformToUni(updatedReg -> {
 			request.setPayload(updatedReg);
+			request.setPrevPayload(oldReg);
 			try {
 				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, emitter, objectMapper);
 			} catch (ResponseException e) {
@@ -195,7 +200,7 @@ public class CSourceService {
 			result.addSuccess(new CRUDSuccess(null, null, request.getId(), Sets.newHashSet()));
 			return Uni.createFrom().item(result);
 
-		});
+		}));
 	}
 
 	public Uni<Map<String, Object>> retrieveRegistration(String tenant, String registrationId) {
@@ -255,15 +260,34 @@ public class CSourceService {
 						return result;
 					}
 					long countLong = rows.iterator().next().getLong(1);
-					if (count) {
-						result.setCount(countLong);
-					}
 					RowIterator<Row> it = rows.iterator();
 					Row next;
 					List<Map<String, Object>> resultData = new ArrayList<>(rows.size());
 					while (it.hasNext()) {
 						next = it.next();
 						resultData.add(next.getJsonObject(0).getMap());
+					}
+					if (qQueryTerm != null) {
+						// q was deliberately not applied in SQL (CSourceDAO): Context Source Properties are
+						// stored as plain values, so evaluate q in-memory against each registration, then
+						// recompute the count and apply pagination here.
+						List<Map<String, Object>> filtered = new ArrayList<>(resultData.size());
+						for (Map<String, Object> reg : resultData) {
+							try {
+								if (qQueryTerm.calculate(reg, null)) {
+									filtered.add(reg);
+								}
+							} catch (Exception e) {
+								// a registration that cannot be evaluated against the q simply does not match
+							}
+						}
+						countLong = filtered.size();
+						int from = Math.min(offset, filtered.size());
+						int to = Math.min(offset + limit, filtered.size());
+						resultData = new ArrayList<>(filtered.subList(from, to));
+					}
+					if (count) {
+						result.setCount(countLong);
 					}
 					long leftAfter = countLong - (offset + limit);
 					leftAfter = (leftAfter < 0) ? 0 : leftAfter;

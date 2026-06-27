@@ -12,6 +12,7 @@ public class CSourceBaseRequest implements Serializable {
 	String tenant;
 	String id;
 	Map<String, Object> payload;
+	Map<String, Object> prevPayload;
 	int requestType;
 	long sendTimeStamp;
 
@@ -49,6 +50,14 @@ public class CSourceBaseRequest implements Serializable {
 
 	public void setPayload(Map<String, Object> payload) {
 		this.payload = payload;
+	}
+
+	public Map<String, Object> getPrevPayload() {
+		return prevPayload;
+	}
+
+	public void setPrevPayload(Map<String, Object> prevPayload) {
+		this.prevPayload = prevPayload;
 	}
 
 	public int getRequestType() {

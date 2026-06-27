@@ -127,25 +127,27 @@ public class RegistrySubscriptionInfoDAO {
 						+ NGSIConstants.JSON_LD_VALUE + "}','0'))::integer + 1 ||'}],\""
 						+ NGSIConstants.NGSI_LD_LAST_SUCCESS + "\": [{\"" + NGSIConstants.JSON_LD_TYPE + "\": \""
 						+ NGSIConstants.NGSI_LD_DATE_TIME + "\", \"" + NGSIConstants.JSON_LD_VALUE
-						+ "\": \"$1\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
+						+ "\": \"'|| $1 ||'\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
 						+ NGSIConstants.JSON_LD_TYPE + "\": \"" + NGSIConstants.NGSI_LD_DATE_TIME + "\", \""
-						+ NGSIConstants.JSON_LD_VALUE + "\": \"$1\"}]}')::jsonb WHERE subscription_id=$2",
+						+ NGSIConstants.JSON_LD_VALUE + "\": \"'|| $1 ||'\"}]}')::jsonb WHERE subscription_id=$2",
 						Tuple.of(date, id), false)
 				.onItem()
 				.transformToUni(t -> Uni.createFrom().voidItem());
 	}
 
 	public Uni<Void> updateNotificationFailure(String tenant, String id, String date) {
+		// NGSI-LD 5.11.7: timesSent counts every notification attempt INCLUDING failures, so a failed
+		// delivery still increments timesSent (not a separate timesFailed) and records lastFailure.
 		return connectionManager
 				.executeQuery(tenant, "UPDATE registry_subscriptions SET subscription = subscription || ('{\""
-						+ NGSIConstants.NGSI_LD_TIMES_FAILED + "\": [{\"" + NGSIConstants.JSON_LD_VALUE
-						+ "\": '|| (COALESCE(subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_FAILED + ",0, "
+						+ NGSIConstants.NGSI_LD_TIMES_SENT + "\": [{\"" + NGSIConstants.JSON_LD_VALUE
+						+ "\": '|| (COALESCE(subscription#>>'{" + NGSIConstants.NGSI_LD_TIMES_SENT + ",0, "
 						+ NGSIConstants.JSON_LD_VALUE + "}','0'))::integer + 1 ||'}],\""
 						+ NGSIConstants.NGSI_LD_LAST_FAILURE + "\": [{\"" + NGSIConstants.JSON_LD_TYPE + "\": \""
 						+ NGSIConstants.NGSI_LD_DATE_TIME + "\", \"" + NGSIConstants.JSON_LD_VALUE
-						+ "\": \"$1\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
+						+ "\": \"'|| $1 ||'\"}],\"" + NGSIConstants.NGSI_LD_LAST_NOTIFICATION + "\": [{\""
 						+ NGSIConstants.JSON_LD_TYPE + "\": \"" + NGSIConstants.NGSI_LD_DATE_TIME + "\", \""
-						+ NGSIConstants.JSON_LD_VALUE + "\": \"$1\"}]}')::jsonb WHERE subscription_id=$2",
+						+ NGSIConstants.JSON_LD_VALUE + "\": \"'|| $1 ||'\"}]}')::jsonb WHERE subscription_id=$2",
 						Tuple.of(date, id), false)
 				.onItem()
 				.transformToUni(t -> Uni.createFrom().voidItem());
@@ -203,11 +205,23 @@ public class RegistrySubscriptionInfoDAO {
 	public Uni<RowSet<Row>> getInitialNotificationData(SubscriptionRequest subscriptionRequest) {
 
 		Tuple tuple = Tuple.tuple();
-		StringBuilder sql = new StringBuilder("with a as (select cs_id from csourceinformation WHERE ");
+		// distinct: csourceinformation holds one row per entity/property/relationship of a
+		// registration, so without DISTINCT a single matching registration is returned (and
+		// notified) once per exploded row → duplicated "data" members in the cSourceNotification.
+		StringBuilder sql = new StringBuilder("with a as (select distinct cs_id from csourceinformation WHERE ");
 		boolean sqlAdded = false;
 		int dollar = 1;
 		Subscription subscription = subscriptionRequest.getSubscription();
 		Iterator<EntityInfo> it = subscription.getEntities().iterator();
+		// NGSI-LD 5.12: the subscription's entities is an array of EntitySelectors and a registration
+		// matches if it matches AT LEAST ONE of them, so the per-selector clauses are OR'd (wrapped in
+		// parentheses to keep precedence over the trailing AND attribute/geo/scope filters). A single
+		// csourceinformation row carries one e_type, so AND'ing selectors could never match a multi-type
+		// subscription.
+		boolean entityGroupOpen = it.hasNext();
+		if (entityGroupOpen) {
+			sql.append("(");
+		}
 		while (it.hasNext()) {
 			EntityInfo entityInformation = it.next();
 			sql.append("(");
@@ -245,9 +259,12 @@ public class RegistrySubscriptionInfoDAO {
 			}
 			sql.append(")");
 			if (it.hasNext()) {
-				sql.append(" and ");
+				sql.append(" or ");
 			}
 			sqlAdded = true;
+		}
+		if (entityGroupOpen) {
+			sql.append(")");
 		}
 
 		if (subscription.getAttributeNames() != null) {

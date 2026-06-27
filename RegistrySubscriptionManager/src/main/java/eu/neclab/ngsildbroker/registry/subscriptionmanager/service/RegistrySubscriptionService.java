@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -409,15 +410,26 @@ public class RegistrySubscriptionService implements CSourceHandler {
 		for (SubscriptionRequest potentialSub : potentialSubs) {
 			switch (message.getRequestType()) {
 				case AppConstants.UPDATE_REQUEST:
-					if (shouldFire(message.getPayload(), potentialSub)) {
-						unis.add(regDAO.getRegById(message.getTenant(), message.getId()).onItem()
-								.transformToUni(rows -> {
-									return sendNotification(potentialSub,
-											rows.iterator().next().getJsonObject(0).getMap(),
-											message.getRequestType());
-								}));
+				case AppConstants.APPEND_REQUEST: {
+					// NGSI-LD 5.11.7: a registration update fires a cSourceNotification whose triggerReason
+					// depends on the match state before vs after the change (updated / newlyMatching /
+					// noLongerMatching). Registration updates are emitted as APPEND_REQUEST, so this case
+					// MUST cover it (previously only UPDATE_REQUEST was handled -> updates never notified).
+					Map<String, Object> newReg = message.getPayload();
+					Map<String, Object> oldReg = message.getPrevPayload();
+					boolean after = newReg != null && shouldSendOut(potentialSub, newReg);
+					boolean before = oldReg != null && shouldSendOut(potentialSub, oldReg);
+					if (after) {
+						// "updated" if it was (or is assumed) already matching, else "newlyMatching"
+						int reason = (before || oldReg == null) ? AppConstants.UPDATE_REQUEST
+								: AppConstants.CREATE_REQUEST;
+						unis.add(sendNotification(potentialSub, newReg, reason));
+					} else if (before) {
+						// no longer matches after the update -> noLongerMatching (DELETE_REQUEST maps to it)
+						unis.add(sendNotification(potentialSub, oldReg, AppConstants.DELETE_REQUEST));
 					}
 					break;
+				}
 				case AppConstants.CREATE_REQUEST:
 				case AppConstants.DELETE_REQUEST:
 					unis.add(sendNotification(potentialSub, message.getPayload(), message.getRequestType()));
@@ -435,7 +447,8 @@ public class RegistrySubscriptionService implements CSourceHandler {
 	private Uni<Void> sendNotification(SubscriptionRequest potentialSub, Map<String, Object> reg, int triggerReason) {
 		if (shouldSendOut(potentialSub, reg)) {
 			long notificationStartTime = System.currentTimeMillis();
-			Uni<Map<String, Object>> generated = SubscriptionTools.generateCsourceNotification(potentialSub, reg, triggerReason, ldService);
+			Map<String, Object> regToSend = filterRelevantInformation(potentialSub, reg);
+			Uni<Map<String, Object>> generated = SubscriptionTools.generateCsourceNotification(potentialSub, regToSend, triggerReason, ldService);
 			if (notificationOnWorkerThread) {
 				generated = generated.emitOn(Infrastructure.getDefaultWorkerPool());
 			}
@@ -480,7 +493,8 @@ public class RegistrySubscriptionService implements CSourceHandler {
 															notificationParam.getEndPoint().getUri().getPath()
 																	.substring(1),
 															Buffer.buffer(SubscriptionTools
-																	.getMqttPayload(notificationParam, notification)),
+																	.getMqttPayload(notificationParam, notification,
+																			potentialSub.getSubscription().getOtherHead())),
 															MqttQoS.valueOf(qos), false, false)
 													.onItem().transformToUni(t -> {
 														if (t == 0) {
@@ -537,6 +551,10 @@ public class RegistrySubscriptionService implements CSourceHandler {
 												if (dataMember != null && !(dataMember instanceof List)) {
 													noti.put(NGSIConstants.NGSI_LD_DATA_SHORT, List.of(dataMember));
 												}
+												// Compaction also collapses each RegistrationInfo's single-element
+												// "entities" array and each EntityInfo's "type" array; restore them so
+												// the registration data keeps its NGSI-LD array structure.
+												restoreCsourceDataArrays(noti.get(NGSIConstants.NGSI_LD_DATA_SHORT));
 												// postAbs: the endpoint URI is absolute (host+port+path); webClient.post(String)
 											// treats it as a request URI on the default host:80 -> Connection refused.
 											return webClient
@@ -548,7 +566,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 														.onItem().transformToUni(result -> {
 															int statusCode = result.statusCode();
 															long now = System.currentTimeMillis();
-															if (statusCode > 200 && statusCode < 300) {
+															if (statusCode >= 200 && statusCode < 300) {
 																potentialSub.getSubscription().getNotification()
 																		.setLastSuccessfulNotification(now);
 																potentialSub.getSubscription().getNotification()
@@ -643,85 +661,8 @@ public class RegistrySubscriptionService implements CSourceHandler {
 			return false;
 		}
 
-		boolean matched = false;
-		if (sub.getEntities() == null || sub.getEntities().isEmpty()) {
-			matched = true;
-		} else {
-			for (EntityInfo entityInfo : sub.getEntities()) {
-				if (entityInfo.getTypeTerm() != null && entityInfo.getTypeTerm().getAllTypes().contains(ALL_TYPES_SUB)) {
-					return true;
-				}
-				if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
-					if (checkRegForIdTypeAttrs(entityInfo.getId(), entityInfo.getTypeTerm(), sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null
-						&& sub.getAttributeNames() != null) {
-					if (checkRegForIdPatternTypeAttrs(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
-							sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null) {
-					if (checkRegForIdType(entityInfo.getId(), entityInfo.getTypeTerm(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null) {
-					if (checkRegForIdPatternType(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getId() != null && sub.getAttributeNames() != null) {
-					if (checkRegForIdAttrs(entityInfo.getId(), sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getIdPattern() != null && sub.getAttributeNames() != null) {
-					if (checkRegForIdPatternAttrs(entityInfo.getIdPattern(), sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
-					if (checkRegForTypeAttrs(entityInfo.getTypeTerm(), sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getTypeTerm() != null) {
-					if (checkRegForType(entityInfo.getTypeTerm(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getIdPattern() != null) {
-					if (checkRegForIdPattern(entityInfo.getIdPattern(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (entityInfo.getId() != null) {
-					if (checkRegForId(entityInfo.getId(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				} else if (sub.getAttributeNames() != null) {
-					if (checkRegForAttribs(sub.getAttributeNames(),
-							(List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION))) {
-						matched = true;
-						break;
-					}
-				}
-			}
-		}
+		List<Map<String, Object>> information = (List<Map<String, Object>>) reg.get(NGSIConstants.NGSI_LD_INFORMATION);
+		boolean matched = matchesEntitySelectors(sub, information);
 		if (!matched) {
 			return false;
 		}
@@ -740,6 +681,166 @@ public class RegistrySubscriptionService implements CSourceHandler {
 			}
 		}
 		return true;
+	}
+
+	// Whether the given RegistrationInfo list matches at least one of the subscription's EntitySelectors
+	// (NGSI-LD 5.12). Extracted from shouldSendOut so it can also be applied per-RegistrationInfo block
+	// to return only the relevant information in a cSourceNotification (5.11.7).
+	@SuppressWarnings("unchecked")
+	private boolean matchesEntitySelectors(Subscription sub, List<Map<String, Object>> information) {
+		boolean matched = false;
+		if (sub.getEntities() == null || sub.getEntities().isEmpty()) {
+			matched = true;
+		} else {
+			for (EntityInfo entityInfo : sub.getEntities()) {
+				if (entityInfo.getTypeTerm() != null && entityInfo.getTypeTerm().getAllTypes().contains(ALL_TYPES_SUB)) {
+					return true;
+				}
+				if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdTypeAttrs(entityInfo.getId(), entityInfo.getTypeTerm(), sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null
+						&& sub.getAttributeNames() != null) {
+					if (checkRegForIdPatternTypeAttrs(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
+							sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null && entityInfo.getTypeTerm() != null) {
+					if (checkRegForIdType(entityInfo.getId(), entityInfo.getTypeTerm(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && entityInfo.getTypeTerm() != null) {
+					if (checkRegForIdPatternType(entityInfo.getIdPattern(), entityInfo.getTypeTerm(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdAttrs(entityInfo.getId(), sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null && sub.getAttributeNames() != null) {
+					if (checkRegForIdPatternAttrs(entityInfo.getIdPattern(), sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getTypeTerm() != null && sub.getAttributeNames() != null) {
+					if (checkRegForTypeAttrs(entityInfo.getTypeTerm(), sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getTypeTerm() != null) {
+					if (checkRegForType(entityInfo.getTypeTerm(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getIdPattern() != null) {
+					if (checkRegForIdPattern(entityInfo.getIdPattern(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (entityInfo.getId() != null) {
+					if (checkRegForId(entityInfo.getId(),
+							information)) {
+						matched = true;
+						break;
+					}
+				} else if (sub.getAttributeNames() != null) {
+					if (checkRegForAttribs(sub.getAttributeNames(),
+							information)) {
+						matched = true;
+						break;
+					}
+				}
+			}
+		}
+		return matched;
+	}
+
+	// Returns a copy of the registration whose "information" array keeps only the RegistrationInfo
+	// blocks relevant to the subscription (NGSI-LD 5.11.7: a cSourceNotification should carry only the
+	// matching RegistrationInfo elements, not the whole registration). If nothing would remain (or there
+	// is no information array) the registration is returned unchanged.
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> filterRelevantInformation(SubscriptionRequest potentialSub, Map<String, Object> reg) {
+		Object infoObj = reg.get(NGSIConstants.NGSI_LD_INFORMATION);
+		if (!(infoObj instanceof List)) {
+			return reg;
+		}
+		List<Map<String, Object>> information = (List<Map<String, Object>>) infoObj;
+		List<Map<String, Object>> relevant = new ArrayList<>();
+		for (Map<String, Object> block : information) {
+			if (matchesEntitySelectors(potentialSub.getSubscription(), List.of(block))) {
+				relevant.add(block);
+			}
+		}
+		if (relevant.isEmpty() || relevant.size() == information.size()) {
+			return reg;
+		}
+		Map<String, Object> filtered = new HashMap<>(reg);
+		filtered.put(NGSIConstants.NGSI_LD_INFORMATION, relevant);
+		return filtered;
+	}
+
+	// Re-wraps the single-element arrays that JSON-LD compaction collapsed in a cSourceNotification's
+	// compacted "data" registrations: information[].entities and each entity's type must stay arrays
+	// per the NGSI-LD ContextSourceRegistration structure.
+	@SuppressWarnings("unchecked")
+	private void restoreCsourceDataArrays(Object dataMember) {
+		if (!(dataMember instanceof List)) {
+			return;
+		}
+		for (Object regObj : (List<Object>) dataMember) {
+			if (!(regObj instanceof Map)) {
+				continue;
+			}
+			Map<String, Object> reg = (Map<String, Object>) regObj;
+			Object info = reg.get("information");
+			if (info != null && !(info instanceof List)) {
+				info = new ArrayList<>(List.of(info));
+				reg.put("information", info);
+			}
+			if (!(info instanceof List)) {
+				continue;
+			}
+			for (Object blockObj : (List<Object>) info) {
+				if (!(blockObj instanceof Map)) {
+					continue;
+				}
+				Map<String, Object> block = (Map<String, Object>) blockObj;
+				Object entities = block.get(NGSIConstants.NGSI_LD_ENTITIES_SHORT);
+				if (entities != null && !(entities instanceof List)) {
+					entities = new ArrayList<>(List.of(entities));
+					block.put(NGSIConstants.NGSI_LD_ENTITIES_SHORT, entities);
+				}
+				if (!(entities instanceof List)) {
+					continue;
+				}
+				for (Object entObj : (List<Object>) entities) {
+					if (!(entObj instanceof Map)) {
+						continue;
+					}
+					Map<String, Object> ent = (Map<String, Object>) entObj;
+					Object type = ent.get(NGSIConstants.QUERY_PARAMETER_TYPE);
+					if (type != null && !(type instanceof List)) {
+						ent.put(NGSIConstants.QUERY_PARAMETER_TYPE, new ArrayList<>(List.of(type)));
+					}
+				}
+			}
+		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -795,7 +896,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 				List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 						.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 				for (Map<String, String> relationship : relationships) {
-					if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+					if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 						return true;
 					}
 				}
@@ -804,7 +905,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 				List<Map<String, String>> properties = (List<Map<String, String>>) entry
 						.get(NGSIConstants.NGSI_LD_PROPERTIES);
 				for (Map<String, String> property : properties) {
-					if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+					if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 						return true;
 					}
 				}
@@ -842,7 +943,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -851,7 +952,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -884,7 +985,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -893,7 +994,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -912,7 +1013,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -921,7 +1022,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -975,7 +1076,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -984,7 +1085,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1002,7 +1103,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1011,7 +1112,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1051,7 +1152,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1060,7 +1161,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1124,7 +1225,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1133,7 +1234,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1182,7 +1283,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1191,7 +1292,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1210,7 +1311,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1219,7 +1320,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1259,7 +1360,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> relationships = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_RELATIONSHIPS);
 					for (Map<String, String> relationship : relationships) {
-						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(relationship.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}
@@ -1268,7 +1369,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 					List<Map<String, String>> properties = (List<Map<String, String>>) entry
 							.get(NGSIConstants.NGSI_LD_PROPERTIES);
 					for (Map<String, String> property : properties) {
-						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_VALUE))) {
+						if (attributeNames.contains(property.get(NGSIConstants.JSON_LD_ID))) {
 							return true;
 						}
 					}

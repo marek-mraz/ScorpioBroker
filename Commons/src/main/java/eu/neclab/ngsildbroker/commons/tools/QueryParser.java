@@ -165,6 +165,14 @@ public class QueryParser {
 			}
 
 		}
+		// A comparison operator was started but no operand followed (e.g. "speed>"): per NGSI-LD
+		// 5.7.2.4 / B.3 this is an invalid query and must be rejected as BadRequestData. A valid
+		// query either ends with an operand (operator already consumed) or is a bare attribute
+		// existence term (no operator at all), so a leftover operator here is always malformed.
+		if (operator.length() > 0) {
+			throw new ResponseException(ErrorType.BadRequestData,
+					"Invalid q: comparison operator without an operand");
+		}
 		if (readingAttrib) {
 			current.setAttribute(attribName);
 		}
@@ -318,6 +326,10 @@ public class QueryParser {
 		while (it.hasNext()) {
 			char b = (char) it.next().intValue();
 			if (b == '(') {
+				// A type-selection expression like (Building|Tower) is JSON-LD-expanded as a whole into
+				// .../default-context/(Building|Tower); the base prefix accumulated before '(' is not a
+				// type name (grammar has none there), so discard it and expand each inner term on its own.
+				type.setLength(0);
 				TypeQueryTerm child = new TypeQueryTerm(context);
 				current.setFirstChild(child);
 				current = child;

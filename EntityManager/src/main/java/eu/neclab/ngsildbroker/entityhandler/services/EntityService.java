@@ -790,7 +790,7 @@ public class EntityService implements CSourceHandler {
 
 			request.setPrevPayloadFromSingle(entityId, previousEntity);
 			try {
-				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
+				emitUpdateWithNullDeletes(request, entityId, previousEntity);
 			} catch (ResponseException e) {
 				return Uni.createFrom().failure(e);
 			}
@@ -938,7 +938,7 @@ public class EntityService implements CSourceHandler {
 			request.setPrevPayloadFromSingle(entityId, v);
 
 			try {
-				microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
+				emitUpdateWithNullDeletes(request, entityId, v);
 			} catch (ResponseException e) {
 				return Uni.createFrom().failure(e);
 			}
@@ -946,6 +946,47 @@ public class EntityService implements CSourceHandler {
 					.addSuccess(new CRUDSuccess(null, null, null, request.getPayload().get(entityId).get(0), context));
 			return Uni.createFrom().item(localResult);
 		});
+	}
+
+	// NGSI-LD 1.6 null in an Update-Attributes / Partial-Update operation deletes the attribute. To make
+	// attributeDeleted subscriptions fire (and the notification carry the urn:ngsi-ld:null tombstone with
+	// the full entity), emit a DeleteAttributeRequest for each null'd attribute - exactly like Merge Patch
+	// does - and emit the original update only for the remaining (genuinely updated) attributes.
+	@SuppressWarnings("unchecked")
+	private void emitUpdateWithNullDeletes(BaseRequest request, String entityId, Map<String, Object> prevEntity)
+			throws ResponseException {
+		Map<String, Object> payload = request.getPayload().get(entityId).get(0);
+		List<String> nullAttrs = Lists.newArrayList();
+		for (Entry<String, Object> e : payload.entrySet()) {
+			if (e.getKey().startsWith("@")) {
+				continue;
+			}
+			if (e.getValue() != null && e.getValue().toString().contains(NGSIConstants.NGSI_LD_NULL)) {
+				nullAttrs.add(e.getKey());
+			}
+		}
+		if (nullAttrs.isEmpty()) {
+			microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
+			return;
+		}
+		for (String attr : nullAttrs) {
+			String datasetId = null;
+			Object val = payload.get(attr);
+			if (val instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map) {
+				Object ds = ((Map<String, Object>) l.get(0)).get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+				if (ds instanceof List<?> dl && !dl.isEmpty() && dl.get(0) instanceof Map) {
+					datasetId = (String) ((Map<String, Object>) dl.get(0)).get(NGSIConstants.JSON_LD_ID);
+				}
+			}
+			DeleteAttributeRequest delReq = new DeleteAttributeRequest(request.getTenant(), entityId, attr, datasetId,
+					false, zip);
+			delReq.setPrevPayloadFromSingle(entityId, prevEntity);
+			microServiceUtils.serializeAndSplitObjectAndEmit(delReq, messageSize, entityEmitter, objectMapper);
+		}
+		boolean hasNonNull = payload.keySet().stream().anyMatch(k -> !k.startsWith("@") && !nullAttrs.contains(k));
+		if (hasNonNull) {
+			microServiceUtils.serializeAndSplitObjectAndEmit(request, messageSize, entityEmitter, objectMapper);
+		}
 	}
 
 	private Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> splitEntity(

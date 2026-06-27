@@ -84,6 +84,30 @@ public class RegistrySubscriptionController {
 			if (lastFailure != null) {
 				notificationParam.put(NGSIConstants.NGSI_LD_LAST_FAILURE, lastFailure);
 			}
+			// NGSI-LD 5.2.14: NotificationParams.status reflects the outcome of the last notification
+			// attempt ("ok"/"failed") and is distinct from the Subscription-level status (active/paused).
+			// "failed" when the latest attempt failed, i.e. a lastFailure exists that is at least as
+			// recent as any lastSuccess; "ok" otherwise.
+			String notificationStatus = "ok";
+			if (lastFailure != null
+					&& (lastSuccess == null || compareInstants(lastFailure, lastSuccess) >= 0)) {
+				notificationStatus = "failed";
+			}
+			notificationParam.put(NGSIConstants.NGSI_LD_STATUS,
+					List.of(java.util.Map.of(NGSIConstants.JSON_LD_VALUE, notificationStatus)));
+		}
+	}
+
+	// Compares two NGSI-LD DateTime values in expanded form ([{ @type:DateTime, @value:"<iso>" }]).
+	// Returns >0 if a is later than b, <0 if earlier, 0 if equal/uncomparable.
+	@SuppressWarnings("unchecked")
+	private int compareInstants(Object a, Object b) {
+		try {
+			String av = (String) ((List<java.util.Map<String, Object>>) a).get(0).get(NGSIConstants.JSON_LD_VALUE);
+			String bv = (String) ((List<java.util.Map<String, Object>>) b).get(0).get(NGSIConstants.JSON_LD_VALUE);
+			return av.compareTo(bv);
+		} catch (Exception e) {
+			return 0;
 		}
 	}
 
