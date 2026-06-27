@@ -27,7 +27,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -82,7 +82,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -132,7 +132,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -182,7 +182,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -232,7 +232,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -282,7 +282,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -332,7 +332,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -382,7 +382,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -432,7 +432,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -482,7 +482,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -532,7 +532,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -582,7 +582,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -632,7 +632,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
       - name: config etsi testsuite
         run: |
           cd ..
@@ -682,7 +682,7 @@ jobs:
       - name: get etsi testsuite
         run: |
           cd ..
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
           cd ngsi-ld-test-suite
           git checkout fix/jsonldContext
       - name: config etsi testsuite

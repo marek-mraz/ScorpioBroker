@@ -45,29 +45,21 @@ jobs:
           # Always pull a FRESH copy of the official ETSI suite (remove any stale checkout first),
           # so the run never uses a cached/diverged suite.
           rm -rf ngsi-ld-test-suite
-          git clone --depth 1 https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone --depth 1 https://github.com/marek-mraz/ngsi-ld-test-suite.git
 
       - name: Configure ETSI Testsuite
         run: |
           cd ngsi-ld-test-suite/resources/
-          
-          # Scorpio runs in Docker, so the callback URLs (notification/context servers) 
-          # spawned by the testsuite on the runner host need to be reachable via host.docker.internal
-          cat <<EOF > variables.py.new
-          url = 'http://localhost:9090/ngsi-ld/v1'
-          temporal_api_url = 'http://localhost:9090/ngsi-ld/v1'
-          ngsild_test_suite_context = 'https://forge.etsi.org/rep/cim/ngsi-ld-test-suite/-/raw/develop/resources/jsonld-contexts/ngsi-ld-test-suite-compound.jsonld'
-          notification_server_host = 'host.docker.internal'
-          notification_server_port = 8085
-          context_source_host = 'host.docker.internal'
-          context_source_port = 8086
-          context_server_host = 'host.docker.internal'
-          context_server_port = 8087
-          EOF
-          
-          # Append the rest of the original configuration
-          tail -n +11 variables.py >> variables.py.new
-          mv variables.py.new variables.py
+          # Robust, position-independent config (the in-repo variables.py has extra lines that a fixed
+          # `tail -n +N` rewrite would mangle). Only override what CI needs:
+          #  - the broker URL (published on localhost:9090 by the compose), and
+          #  - the callback hosts: Scorpio runs in Docker, so the notification/context servers spawned
+          #    by the suite on the runner host must be reachable via host.docker.internal.
+          sed -i "s|^url = .*|url = 'http://localhost:9090/ngsi-ld/v1'|" variables.py
+          sed -i "s|^temporal_api_url = .*|temporal_api_url = 'http://localhost:9090/ngsi-ld/v1'|" variables.py
+          sed -i "s|^notification_server_host = .*|notification_server_host = 'host.docker.internal'|" variables.py
+          sed -i "s|^context_source_host = .*|context_source_host = 'host.docker.internal'|" variables.py
+          sed -i "s|^context_server_host = .*|context_server_host = 'host.docker.internal'|" variables.py
 
       - name: Run ETSI Testsuite (Serially)
         run: |

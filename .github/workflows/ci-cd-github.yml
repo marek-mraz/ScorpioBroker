@@ -183,7 +183,7 @@ jobs:
         run: |
           # Always start from a FRESH official suite (drop any stale checkout first).
           rm -rf ngsi-ld-test-suite
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
 
       - name: Config ETSI Testsuite
         run: |
@@ -268,7 +268,7 @@ jobs:
         run: |
           # Always start from a FRESH official suite (drop any stale checkout first).
           rm -rf ngsi-ld-test-suite
-          git clone https://forge.etsi.org/rep/cim/ngsi-ld-test-suite.git
+          git clone https://github.com/marek-mraz/ngsi-ld-test-suite.git
 
       - name: Run ETSI IOP Tests
         run: |
