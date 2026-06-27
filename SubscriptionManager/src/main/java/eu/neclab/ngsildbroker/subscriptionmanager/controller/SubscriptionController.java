@@ -192,11 +192,11 @@ public class SubscriptionController {
 	private void fixSub(Map<String, Object> sub) {
 
 		// On create the broker hosts the supplied @context implicitly and stores a synthesized
-		// jsonldContext URL pointing at /jsonldContexts/ (SubscriptionService). That is an internal
-		// artifact for contacting context sources (NGSI-LD 4.3.6.6); it must not leak into the
-		// subscription representation, where @context travels via the request context / Link header
-		// (NGSI-LD 6.3.5). Drop it so retrieve/query output matches the spec representation.
-		sub.remove(NGSIConstants.NGSI_LD_JSONLD_CONTEXT);
+		// jsonldContext URL pointing at /jsonldContexts/ (SubscriptionService). Per NGSI-LD 5.2.12 and
+		// the Subscription Behaviour clause, jsonldContext is a legitimate output member of the
+		// Subscription (the @context used when sending notifications). Keep it: it compacts to the
+		// "jsonldContext" term carrying the URL string. Representation-comparison tests that don't care
+		// about it list it in their ignore_keys.
 
 		// notificationTrigger defaults to attributeCreated + attributeUpdated when not supplied
 		// (NGSI-LD 5.2.12). The default is materialized on the Subscription object but not the stored

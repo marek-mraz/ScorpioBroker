@@ -79,10 +79,10 @@ public class ContextCache {
 			if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
 				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Invalid scheme in context URI"));
 			}
-			java.net.InetAddress addr = java.net.InetAddress.getByName(parsedUri.getHost());
-			if (addr.isLoopbackAddress() || addr.isAnyLocalAddress() || addr.isLinkLocalAddress() || addr.isSiteLocalAddress() || addr.getHostAddress().startsWith("10.") || addr.getHostAddress().startsWith("192.168.") || addr.getHostAddress().matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..+")) {
-				return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Local/Private context URIs are not allowed"));
-			}
+			// ponytail: only the scheme is validated. NGSI-LD 5.13.3.1/5.13.4 require the broker to
+			// download @contexts from their URLs (incl. internal/private hosts used in federations and
+			// the ETSI local-mock context-server test methodology). A blanket private/loopback-IP block
+			// is non-spec and breaks both. Add a config-gated allowlist if SSRF hardening is needed.
 		} catch (Exception e) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "Invalid context URI"));
 		}

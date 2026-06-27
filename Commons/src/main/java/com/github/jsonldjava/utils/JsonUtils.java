@@ -375,7 +375,12 @@ public class JsonUtils {
 		// We prefer application/ld+json, but fallback to application/json
 		// or whatever is available
 
-		return webClient.getAbs(url.toExternalForm()).putHeader("Accept", ACCEPT_HEADER).send().onFailure()
+		// Bound the remote @context fetch: without a timeout an unreachable/non-responding context
+		// server makes the request hang indefinitely (NGSI-LD 5.13.4 expects a prompt
+		// LdContextNotAvailable instead). A dead host fails fast (connection refused) regardless; the
+		// bound only matters for slow-but-reachable servers (e.g. smartdatamodels.org), so keep it
+		// generous (10s) to avoid spurious LdContextNotAvailable on legitimate large/slow contexts.
+		return webClient.getAbs(url.toExternalForm()).putHeader("Accept", ACCEPT_HEADER).timeout(10000).send().onFailure()
 				.recoverWithUni(e -> {
 					return Uni.createFrom().failure(new LdContextException(
 							"Can't retrieve " + url.toExternalForm() + ", because " + e.getLocalizedMessage()));
