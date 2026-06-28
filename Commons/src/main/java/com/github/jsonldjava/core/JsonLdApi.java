@@ -461,7 +461,14 @@ public class JsonLdApi {
 						return compact(activeCtx, NGSIConstants.LIST, expandedValue, compactArrays, payloadType, null,
 								null);
 					} else if (isRelationship) {
-						if (expandedProperty.equals(NGSIConstants.NGSI_LD_HAS_OBJECT)) {
+						if (expandedProperty.equals(NGSIConstants.NGSI_LD_ENTITY)) {
+							// inline Linked Entity retrieval, simplified (NGSI-LD 4.5.23): a Relationship
+							// targeting a local entity is rendered as the linked entity's key-value
+							// representation, not its target URI. Sorted keys put "entity" before
+							// "hasObject", so this returns before the URI branch below.
+							return compact(activeCtx, activeProperty, expandedValue, compactArrays, payloadType,
+									options, langQuery);
+						} else if (expandedProperty.equals(NGSIConstants.NGSI_LD_HAS_OBJECT)) {
 							List<String> ids = new ArrayList<>();
 							if (expandedValue instanceof List<?> lsIdsMap) {
 								lsIdsMap.forEach(idMap -> {

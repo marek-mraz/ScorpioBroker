@@ -9,6 +9,10 @@
 	<packaging>pom</packaging>
 	<properties>
 		<compiler-plugin.version>3.14.0</compiler-plugin.version>
+		<spotbugs-plugin.version>4.9.6.0</spotbugs-plugin.version>
+		<findsecbugs.version>1.13.0</findsecbugs.version>
+		<errorprone.version>2.43.0</errorprone.version>
+		<nullaway.version>0.13.0</nullaway.version>
 		<failsafe.useModulePath>false</failsafe.useModulePath>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -43,10 +47,44 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>${compiler-plugin.version}</version>
 				<configuration>
+					<!-- Warnings only (no -Werror yet). Excludes the noisy categories that
+					     fire on Quarkus/Lombok generated code and serializable DTOs. Ratchet
+					     to -Werror per-module once a module is clean. -->
 					<compilerArgs>
 						<arg>-parameters</arg>
+						<arg>-Xlint:all,-processing,-serial,-this-escape</arg>
 					</compilerArgs>
 				</configuration>
+			</plugin>
+			<!-- Bytecode-level bug + security analysis. Bound to `verify` and FAILS the build
+			     on any finding (failOnError=true). Escape hatch for the quick AAIO measure
+			     loop only: `-Dspotbugs.skip=true`. Suppress false positives in
+			     spotbugs-exclude.xml rather than disabling globally. -->
+			<plugin>
+				<groupId>com.github.spotbugs</groupId>
+				<artifactId>spotbugs-maven-plugin</artifactId>
+				<version>${spotbugs-plugin.version}</version>
+				<configuration>
+					<effort>Max</effort>
+					<threshold>Low</threshold>
+					<failOnError>true</failOnError>
+					<xmlOutput>true</xmlOutput>
+					<excludeFilterFile>${maven.multiModuleProjectDirectory}/spotbugs-exclude.xml</excludeFilterFile>
+					<plugins>
+						<plugin>
+							<groupId>com.h3xstream.findsecbugs</groupId>
+							<artifactId>findsecbugs-plugin</artifactId>
+							<version>${findsecbugs.version}</version>
+						</plugin>
+					</plugins>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 			<plugin>
 				<groupId>io.smallrye</groupId>
@@ -235,6 +273,53 @@
 		</dependency>
 	</dependencies>
 	<profiles>
+		<!-- Opt-in compile-time null/type safety. Activate with `-Plint-strict`.
+		     Kept out of the default build so the normal AAIO build/measure loop is
+		     untouched. Error Prone forks javac and needs the JDK compiler module
+		     exports below. NullAway runs in WARN mode first; bump to :ERROR once the
+		     broker packages are annotated with JSpecify @Nullable. -->
+		<profile>
+			<id>lint-strict</id>
+			<build>
+				<plugins>
+					<plugin>
+						<artifactId>maven-compiler-plugin</artifactId>
+						<version>${compiler-plugin.version}</version>
+						<configuration>
+							<fork>true</fork>
+							<compilerArgs>
+								<arg>-parameters</arg>
+								<arg>-XDcompilePolicy=simple</arg>
+								<arg>--should-stop=ifError=FLOW</arg>
+								<arg>-Xplugin:ErrorProne -XepDisableWarningsInGeneratedCode -XepExcludedPaths:.*/(target|generated-sources)/.* -Xep:NullAway:WARN -XepOpt:NullAway:AnnotatedPackages=eu.neclab.ngsildbroker</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED</arg>
+								<arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED</arg>
+								<arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED</arg>
+								<arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</arg>
+							</compilerArgs>
+							<annotationProcessorPaths>
+								<path>
+									<groupId>com.google.errorprone</groupId>
+									<artifactId>error_prone_core</artifactId>
+									<version>${errorprone.version}</version>
+								</path>
+								<path>
+									<groupId>com.uber.nullaway</groupId>
+									<artifactId>nullaway</artifactId>
+									<version>${nullaway.version}</version>
+								</path>
+							</annotationProcessorPaths>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
 		<profile>
 			<id>macos</id>
 			<activation>

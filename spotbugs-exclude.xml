@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SpotBugs exclusions for Scorpio. Filters generated/Quarkus-synthetic code and
+     a few low-signal categories so real bugs aren't buried in noise. Tighten over time. -->
+<FindBugsFilter>
+    <!-- Quarkus / Jandex / config generated sources and CDI synthetic classes -->
+    <Match>
+        <Class name="~.*\.Quarkus.*"/>
+    </Match>
+    <Match>
+        <Class name="~.*_ClientProxy"/>
+    </Match>
+    <Match>
+        <Class name="~.*_Bean"/>
+    </Match>
+    <Match>
+        <Class name="~.*_Subclass"/>
+    </Match>
+    <Match>
+        <Source name="~.*/generated-sources/.*"/>
+    </Match>
+
+    <!-- Low-signal / opinionated checks: enable later once real bugs are cleared -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Bug pattern="SE_BAD_FIELD"/>
+    </Match>
+</FindBugsFilter>

@@ -372,9 +372,21 @@ public class SubscriptionTools {
 								notification.put(NGSIConstants.NGSI_LD_DATA_SHORT, data);
 								break;
 							case 2:
-								// ld+
-								data.forEach(entry -> entry.put(NGSIConstants.JSON_LD_CONTEXT,
-										Collections.singletonList(potentialSub.getSubscription().getJsonldContext())));
+								// ld+json: use the subscription's jsonldContext member; if it was not
+								// supplied, fall back to the @context the subscription was created with
+								// (NGSI-LD 5.5.x Behaviour: jsonldContext defaults to the Subscription @context).
+								String ldCtx = potentialSub.getSubscription().getJsonldContext();
+								Object ldNotifyCtx;
+								if (ldCtx != null) {
+									ldNotifyCtx = Collections.singletonList(ldCtx);
+								} else {
+									// strip the implicit core context so a single user @context renders as that URL
+									List<String> orig = context.getOriginalAtContext();
+									List<String> nonCore = orig.stream()
+											.filter(c -> !NGSIConstants.CORE_CONTEXT_URLS.contains(c)).toList();
+									ldNotifyCtx = nonCore.isEmpty() ? orig : nonCore;
+								}
+								data.forEach(entry -> entry.put(NGSIConstants.JSON_LD_CONTEXT, ldNotifyCtx));
 								notification.put(NGSIConstants.NGSI_LD_DATA_SHORT, data);
 								break;
 							case 3:
@@ -501,10 +513,14 @@ public class SubscriptionTools {
 	}
 
 	public static Uni<Context> getContextForNotification(JsonLDService ldService, SubscriptionRequest potentialSub) {
-		if (potentialSub.getPayload().containsKey(NGSIConstants.NGSI_LD_JSONLD_CONTEXT)) {
-			Object payloadAtContext = ((List<Map<String, Object>>) potentialSub.getPayload()
-					.get(NGSIConstants.NGSI_LD_JSONLD_CONTEXT)).get(0).get(JsonLdConsts.VALUE);
-			return ldService.parse(payloadAtContext);
+		// Only a jsonldContext the user EXPLICITLY supplied (Subscription.jsonldContext is populated solely
+		// from an explicit member) overrides the notification @context. The payload's jsonldContext may be
+		// the broker's auto re-hosted URL, which must NOT replace the subscription's original @context for
+		// notification encoding (NGSI-LD 5.5.x: jsonldContext defaults to the Subscription @context).
+		String explicit = potentialSub.getSubscription() == null ? null
+				: potentialSub.getSubscription().getJsonldContext();
+		if (explicit != null) {
+			return ldService.parse(explicit);
 		}
 		return Uni.createFrom().item(potentialSub.getContext());
 	}

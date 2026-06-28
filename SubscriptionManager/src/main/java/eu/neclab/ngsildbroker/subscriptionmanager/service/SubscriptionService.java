@@ -538,9 +538,17 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 		return localContextService.createImplicitly(tenant, tmp).onItem().transformToUni(contextId -> {
 			String ctxUrl = microServiceUtils.getGatewayString() + NGSIConstants.JSONLD_CONTEXTS + contextId;
+			// NGSI-LD 5.5.x / 6.3.5: a notification conveys the @context applicable to the subscription.
+			// When the user supplied a single (already dereferenceable) URL @context, reference it
+			// directly so receivers see the original context; only inline/multi-context subscriptions
+			// need the re-hosted aggregate copy.
+			List<String> origCtx = request.getContext().getOriginalAtContext();
+			List<String> origNonCore = origCtx == null ? List.of()
+					: origCtx.stream().filter(c -> !NGSIConstants.CORE_CONTEXT_URLS.contains(c)).toList();
+			String linkUrl = origNonCore.size() == 1 ? origNonCore.get(0) : ctxUrl;
 			request.getSubscription().getOtherHead().add(NGSIConstants.LINK_HEADER,
 					"<%s>; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\""
-							.formatted(ctxUrl));
+							.formatted(linkUrl));
 			request.setContextId(contextId);
 			List<Map<String, Object>> contextList = new ArrayList<>(1);
 			Map<String, Object> contextEntry = new HashMap<>(1);
