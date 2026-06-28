@@ -668,7 +668,7 @@ public final class EntityTools {
 						tmp.put(NGSIConstants.ID, id);
 					}
 					if (type != null) {
-						tmp.put(NGSIConstants.TYPE, remoteHost.context().compactIri(type));
+						tmp.put(NGSIConstants.TYPE, type);
 					}
 					if (idPattern != null) {
 						tmp.put(NGSIConstants.QUERY_PARAMETER_IDPATTERN, idPattern);
@@ -697,7 +697,7 @@ public final class EntityTools {
 			}
 			Map<String, String> httpQueryParams = new HashMap<>(3);
 			httpQueryParams.put("limit", limit + "");
-			httpQueryParams.put("offset", limit + "");
+			httpQueryParams.put("offset", offset + "");
 			httpQueryParams.put("options", "sysAttrs");
 
 			String batchString;
@@ -848,6 +848,15 @@ public final class EntityTools {
 							MultiMap headers = remoteHost.headers();
 							if (queryParams != null) {
 								for (Entry<String, Object> param : queryParams.entrySet()) {
+									if (param.getKey().equals(NGSIConstants.ID) || param.getKey().equals(NGSIConstants.TYPE)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_IDPATTERN)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_QUERY)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_GEOREL)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_GEOMETRY)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_COORDINATES)
+											|| param.getKey().equals(NGSIConstants.QUERY_PARAMETER_GEOPROPERTY)) {
+										continue;
+									}
 									HttpUtils.serializeQueryParams(httpQueryParams, param);
 								}
 							}

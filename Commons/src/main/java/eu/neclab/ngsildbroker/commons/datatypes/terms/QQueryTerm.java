@@ -3435,7 +3435,7 @@ public class QQueryTerm implements Serializable {
 		if (firstChild != null) {
 			result = "(" + firstChild.toQueryParam(context) + ")";
 		} else {
-			result = URLEncoder.encode(context.compactIri(attribute), StandardCharsets.UTF_8);
+			result = context.compactIri(attribute);
 			if (isLinkedQ) {
 
 			} else {

@@ -138,7 +138,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	@ConfigProperty(name = "scorpio.querymanager.url")
 	private String queryServiceUrl;
 
-	@ConfigProperty(name = "scorpio.subscription.notification.worker-thread", defaultValue = "false")
+	@ConfigProperty(name = "scorpio.subscription.notification.worker-thread", defaultValue = "true")
 	boolean notificationOnWorkerThread;
 
 	private String ALL_TYPES_SUB;

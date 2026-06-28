@@ -32,6 +32,8 @@ import eu.neclab.ngsildbroker.commons.constants.AppConstants;
 import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
 import eu.neclab.ngsildbroker.commons.datatypes.RegistrationEntry;
 import eu.neclab.ngsildbroker.commons.datatypes.RemoteHost;
+import eu.neclab.ngsildbroker.commons.enums.ErrorType;
+import eu.neclab.ngsildbroker.commons.exceptions.ResponseException;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.AppendHistoryEntityRequest;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.BaseRequest;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.BatchRequest;
@@ -439,16 +441,21 @@ public class HistoryEntityService implements CSourceHandler {
 		Set<RemoteHost> result = Sets.newHashSet();
 		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(request.getTenant()).values()) {
 			for (RegistrationEntry regEntry : regEntries) {
-				if (!regEntry.deleteTemporal()) {
+				boolean matches = (regEntry.eId() == null && regEntry.eIdp() == null)
+						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
+						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()));
+				if (!matches) {
 					continue;
 				}
-				if ((regEntry.eId() == null && regEntry.eIdp() == null)
-						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()))) {
-					result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
+				if (!regEntry.deleteTemporal()) {
+					if (regEntry.regMode() > 1) {
+						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+					}
+					continue;
+				}
+				result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
 							regEntry.host().headers(), regEntry.host().cSourceId(), true, false, regEntry.regMode(),
 							false, regEntry.queryEntityMap(), regEntry.host().cSourceAlias()));
-				}
 			}
 		}
 		return result;
@@ -459,17 +466,22 @@ public class HistoryEntityService implements CSourceHandler {
 		Set<RemoteHost> result = Sets.newHashSet();
 		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(request.getTenant()).values()) {
 			for (RegistrationEntry regEntry : regEntries) {
-				if (!regEntry.deleteAttrInstanceTemporal()) {
+				boolean matches = ((regEntry.eId() == null && regEntry.eIdp() == null)
+						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
+						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp())))
+								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()));
+				if (!matches) {
 					continue;
 				}
-				if ((regEntry.eId() == null && regEntry.eIdp() == null)
-						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()))
-								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()))) {
-					result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
+				if (!regEntry.deleteAttrInstanceTemporal()) {
+					if (regEntry.regMode() > 1) {
+						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+					}
+					continue;
+				}
+				result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
 							regEntry.host().headers(), regEntry.host().cSourceId(), true, false, regEntry.regMode(),
 							false, regEntry.queryEntityMap(), regEntry.host().cSourceAlias()));
-				}
 			}
 		}
 		return result;
@@ -479,17 +491,22 @@ public class HistoryEntityService implements CSourceHandler {
 		Set<RemoteHost> result = Sets.newHashSet();
 		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(request.getTenant()).values()) {
 			for (RegistrationEntry regEntry : regEntries) {
-				if (!regEntry.deleteAttrInstanceTemporal()) {
+				boolean matches = ((regEntry.eId() == null && regEntry.eIdp() == null)
+						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
+						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp())))
+								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()));
+				if (!matches) {
 					continue;
 				}
-				if ((regEntry.eId() == null && regEntry.eIdp() == null)
-						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()))
-								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()))) {
-					result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
+				if (!regEntry.deleteAttrsTemporal()) {
+					if (regEntry.regMode() > 1) {
+						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+					}
+					continue;
+				}
+				result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
 							regEntry.host().headers(), regEntry.host().cSourceId(), true, false, regEntry.regMode(),
 							false, regEntry.queryEntityMap(), regEntry.host().cSourceAlias()));
-				}
 			}
 		}
 		return result;
@@ -585,39 +602,46 @@ public class HistoryEntityService implements CSourceHandler {
 						it.remove();
 						continue;
 					}
+					boolean opSupported = true;
 					switch (request.getRequestType()) {
 						case AppConstants.CREATE_TEMPORAL_REQUEST:
 							if (!regEntry.upsertTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						case AppConstants.APPEND_TEMPORAL_REQUEST:
 							if (!regEntry.appendAttrsTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						case AppConstants.UPDATE_TEMPORAL_INSTANCE_REQUEST:
 							if (!regEntry.updateAttrsTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						case AppConstants.DELETE_TEMPORAL_REQUEST:
 							if (!regEntry.deleteTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						case AppConstants.DELETE_TEMPORAL_ATTRIBUTE_REQUEST:
 							if (!regEntry.deleteAttrsTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						case AppConstants.DELETE_TEMPORAL_ATTRIBUTE_INSTANCE_REQUEST:
 							if (!regEntry.deleteAttrInstanceTemporal()) {
-								continue;
+								opSupported = false;
 							}
 							break;
 						default:
-							continue;
+							opSupported = false;
+					}
+					if (!opSupported) {
+						if (regEntry.regMode() > 1) {
+							throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						}
+						continue;
 					}
 
 					String propType = ((List<String>) ((List<Map<String, Object>>) entry.getValue()).get(0)

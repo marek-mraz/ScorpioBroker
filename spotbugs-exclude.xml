@@ -2,7 +2,9 @@
 <!-- SpotBugs exclusions for Scorpio. Filters generated/Quarkus-synthetic code and
      a few low-signal categories so real bugs aren't buried in noise. Tighten over time. -->
 <FindBugsFilter>
-    <!-- Quarkus / Jandex / config generated sources and CDI synthetic classes -->
+    <Match>
+        <Class name="~com\.github\.jsonldjava\..*"/>
+    </Match>
     <Match>
         <Class name="~.*\.Quarkus.*"/>
     </Match>

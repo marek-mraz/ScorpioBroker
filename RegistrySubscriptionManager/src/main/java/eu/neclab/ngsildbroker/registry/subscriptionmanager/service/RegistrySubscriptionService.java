@@ -110,7 +110,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 	@ConfigProperty(name = "scorpio.alltypesub.type")
 	private String allTypeSubType;
 
-	@ConfigProperty(name = "scorpio.subscription.notification.worker-thread", defaultValue = "false")
+	@ConfigProperty(name = "scorpio.subscription.notification.worker-thread", defaultValue = "true")
 	boolean notificationOnWorkerThread;
 
 	@Inject

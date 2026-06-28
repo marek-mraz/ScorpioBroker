@@ -360,6 +360,9 @@ public final class HttpUtils {
 
 	public static RestResponse<Object> handleControllerExceptions(Throwable e, String tenant) {
 		ResponseBuilder<Object> myBuilder;
+		if (e instanceof RuntimeException && e.getCause() instanceof ResponseException) {
+			e = e.getCause();
+		}
 		if (e instanceof ResponseException responseException) {
 			logger.debug("Exception :: ", responseException);
 			myBuilder = RestResponseBuilderImpl.create(responseException.getErrorCode())
