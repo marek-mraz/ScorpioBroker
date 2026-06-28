@@ -58,22 +58,38 @@ export CLEAN_DB_CONTAINER="${CLEAN_DB_CONTAINER:-scorpio-postgres-1}"
 EXCLUDE=(--exclude iop)
 [ "${INCLUDE_MQTT:-}" = 1 ] || EXCLUDE+=(--exclude mqtt)
 
+# Debug fix-loop: STOP_ON_ERROR=1 makes robot abort at the FIRST failing test (--exitonfailure) and
+# halts the whole serial run right there, writing etsi-failures.md so the error surfaces immediately.
+# Default (unset) runs every suite to completion, unchanged.
+DBG=()
+[ "${STOP_ON_ERROR:-}" = 1 ] && DBG+=(--exitonfailure)
+stop_if_failed() {  # $1=robot exit code  $2=suite label  $3=results dir
+  { [ "${STOP_ON_ERROR:-}" = 1 ] && [ "$1" -ne 0 ]; } || return 0
+  echo ">>> STOP_ON_ERROR: first failing test in '$2' (robot rc=$1) — halting serial run."
+  python3 report_failures.py "$3/output.xml" etsi-failures.md || true
+  echo "  inspect: $SUITE/$3/log.html   failures: $SUITE/etsi-failures.md"
+  exit 1
+}
+
 rm -rf results && mkdir -p results
 for s in CommonBehaviours \
          ContextInformation/Consumption ContextInformation/Provision ContextInformation/Subscription \
          ContextSource jsonldContext; do
   ./clean_db.sh >/dev/null 2>&1 || true
   name="${s//\//-}"
-  $ROBOT "${EXCLUDE[@]}" --outputdir "results/$name" "./TP/NGSI-LD/$s" || true
+  $ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir "results/$name" "./TP/NGSI-LD/$s"; rc=$?
+  stop_if_failed "$rc" "$s" "results/$name"
 done
 
 # DistributedOperations: broker1 is the SUT, the other brokers are federated context sources.
 ./clean_db.sh >/dev/null 2>&1 || true
-$ROBOT "${EXCLUDE[@]}" --outputdir results/DistributedOperations ./TP/NGSI-LD/DistributedOperations || true
+$ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir results/DistributedOperations ./TP/NGSI-LD/DistributedOperations; rc=$?
+stop_if_failed "$rc" DistributedOperations results/DistributedOperations
 
 # IOP: exercises all five brokers (self-resetting suite).
-$ROBOT --variable b1_url:"$B1" --variable b2_url:"$B2" --variable b3_url:"$B3" \
-       --variable b4_url:"$B4" --variable b5_url:"$B5" --outputdir results/IOP IOP_TP || true
+$ROBOT "${DBG[@]}" --variable b1_url:"$B1" --variable b2_url:"$B2" --variable b3_url:"$B3" \
+       --variable b4_url:"$B4" --variable b5_url:"$B5" --outputdir results/IOP IOP_TP; rc=$?
+stop_if_failed "$rc" IOP results/IOP
 
 # ---- Unified output (IDENTICAL for local and CI) -------------------------------------------------
 # 1) ONE combined report: merge every suite's output.xml into results/{output.xml,report.html,log.html}.
