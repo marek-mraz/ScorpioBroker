@@ -351,6 +351,7 @@ public class SubscriptionTools {
 										.ofInstant(Instant.ofEpochMilli(System.currentTimeMillis()), ZoneId.of("Z"))));
 						List<Map<String, Object>> data = (List<Map<String, Object>>) compacted
 								.getOrDefault(JsonLdConsts.GRAPH, List.of(compacted));
+						data.forEach(SubscriptionTools::fixDeletedLanguageMap);
 						int acceptHeader = HttpUtils.parseAcceptHeader(
 								List.of(potentialSub.getSubscription().getNotification().getEndPoint().getAccept()));
 						if (potentialSub.getSubscription().getNotification().getFormat() == Format.concise) {
@@ -389,6 +390,24 @@ public class SubscriptionTools {
 						return notification;
 					});
 		});
+	}
+
+	// NGSI-LD Null tombstone for a deleted LanguageProperty (showChanges entity/attr delete): the
+	// `languageMap` member must be the bare "urn:ngsi-ld:null" string (like a deleted Property `value` or
+	// Relationship `object`), but JSON-LD @container:@language compaction renders it as a single-entry
+	// {"@none":"urn:ngsi-ld:null"} map. Normalize that single case back to the bare string. (Spec: the
+	// NGSI-LD Null representation valued urn:ngsi-ld:null; ETSI 046_37_01.)
+	@SuppressWarnings("unchecked")
+	private static void fixDeletedLanguageMap(Map<String, Object> entity) {
+		for (Object attr : entity.values()) {
+			if (attr instanceof Map<?, ?> attrMap) {
+				Object lm = ((Map<String, Object>) attrMap).get(NGSIConstants.LANGUAGE_MAP);
+				if (lm instanceof Map<?, ?> lmMap && lmMap.size() == 1
+						&& NGSIConstants.NGSI_LD_NULL.equals(lmMap.get(NGSIConstants.JSON_LD_NONE))) {
+					((Map<String, Object>) attrMap).put(NGSIConstants.LANGUAGE_MAP, NGSIConstants.NGSI_LD_NULL);
+				}
+			}
+		}
 	}
 
 	public static Uni<Context> getContextForNotification(JsonLDService ldService, SubscriptionRequest potentialSub) {

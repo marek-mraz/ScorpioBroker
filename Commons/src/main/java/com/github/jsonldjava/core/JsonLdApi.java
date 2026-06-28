@@ -3769,6 +3769,17 @@ public class JsonLdApi {
 		if (langQuery != null) {
 			checkLangQuery(langQuery, resultMap, hasLanguageMap);
 		} else {
+			// NGSI-LD Null tombstone for a deleted LanguageProperty: the languageMap is rendered as the
+			// bare "urn:ngsi-ld:null" string (same as a deleted Property value / Relationship object), not
+			// as a {"@none":"urn:ngsi-ld:null"} map. Signature: a single @none entry valued NGSI-LD Null.
+			if (hasLanguageMap.size() == 1) {
+				Map<String, Object> only = hasLanguageMap.get(0);
+				if (NGSIConstants.NGSI_LD_NULL.equals(only.get(NGSIConstants.JSON_LD_VALUE))
+						&& NGSIConstants.JSON_LD_NONE.equals(only.get(NGSIConstants.JSON_LD_LANGUAGE))) {
+					resultMap.put(NGSIConstants.LANGUAGE_MAP, NGSIConstants.NGSI_LD_NULL);
+					return;
+				}
+			}
 			Map<String, Object> languageMap = new HashMap<>(hasLanguageMap.size());
 			for (Map<String, Object> entry : hasLanguageMap) {
 				languageMap.put((String) entry.get(NGSIConstants.JSON_LD_LANGUAGE),
