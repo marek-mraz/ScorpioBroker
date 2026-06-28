@@ -14,10 +14,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          # ngsi-ld-test-suite is a git submodule (public fork marek-mraz/ngsi-ld-test-suite);
-          # without this the suite dir is absent in CI and every robot/sed/report step fails.
-          submodules: recursive
+
+      - name: Fetch the ETSI test suite
+        run: git clone --depth 1 https://github.com/marek-mraz/ngsi-ld-test-suite.git ngsi-ld-test-suite
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4

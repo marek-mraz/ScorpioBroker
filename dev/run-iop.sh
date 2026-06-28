@@ -43,17 +43,21 @@ if docker network inspect "${PROJECT}_scorpio-net" >/dev/null 2>&1; then
     || true
 fi
 
-# 3. Health by in-network hostname (docker-out-of-docker: published ports are on the VM host).
-echo ">>> waiting for all 5 brokers' health (by hostname)"
+# 3. Health-check each broker. Use BN base URL if set (CI reaches the brokers on their published
+#    ports via host.docker.internal), else by in-network hostname (docker-out-of-docker dev box,
+#    where published ports land on the VM host, not this container's localhost).
+echo ">>> waiting for all 5 brokers' health"
 for n in 1 2 3 4 5; do
+  base_var="B${n}"; base="${!base_var:-http://scorpio${n}:9090/ngsi-ld/v1}"
+  health="${base%/ngsi-ld/v1}/q/health"
   ok=
   for i in $(seq 1 90); do
-    if curl -sf -m2 "http://scorpio${n}:9090/q/health" >/dev/null 2>&1; then
-      echo "  scorpio${n} UP after ~$((i*2))s"; ok=1; break
+    if curl -sf -m2 "$health" >/dev/null 2>&1; then
+      echo "  scorpio${n} UP after ~$((i*2))s  ($health)"; ok=1; break
     fi
     sleep 2
   done
-  [ -n "$ok" ] || { echo "  scorpio${n} TIMED OUT"; docker compose -p "$PROJECT" -f "$COMPOSE" logs --tail 30 "scorpio${n}"; exit 1; }
+  [ -n "$ok" ] || { echo "  scorpio${n} TIMED OUT ($health)"; docker compose -p "$PROJECT" -f "$COMPOSE" logs --tail 30 "scorpio${n}"; exit 1; }
 done
 
 echo "=== IOP / DistributedOperations stack up (built from local repo) ==="
