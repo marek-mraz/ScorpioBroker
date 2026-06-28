@@ -1270,22 +1270,26 @@ public class EntityService implements CSourceHandler {
 		for (String s : toBeRemoved) {
 			originalEntity.remove(s);
 		}
-		Map<String, Object> toStore = null;
-		if (!originalEntity.isEmpty()) {
-			if (cId2RemoteHostEntity.isEmpty()) {
-				toStore = originalEntity;
-			} else {
-				toStore = MicroServiceUtils.deepCopyMap(originalEntity);
-			}
-			toStore.put(NGSIConstants.JSON_LD_ID, entityId);
-			if (originalTypes != null && !originalTypes.isEmpty()) {
-				toStore.put(NGSIConstants.JSON_LD_TYPE, originalTypes);
-			}
-			if (originalScopes != null) {
-				toStore.put(NGSIConstants.NGSI_LD_SCOPE, originalScopes);
-			}
-			EntityTools.addSysAttrs(toStore, request.getSendTimestamp());
+		Map<String, Object> toStore;
+		// Even when no attributes remain locally (minimal entity, or type/scope-only
+		// operation), still store the local entity shell (id + type? + scope?). Otherwise
+		// splitEntity returns a null local entity and createEntity/createBatch build an
+		// empty Uni set -> "The Uni set is empty" 500. (Restores pre-refactor behavior.)
+		if (originalEntity.isEmpty()) {
+			toStore = new HashMap<>();
+		} else if (cId2RemoteHostEntity.isEmpty()) {
+			toStore = originalEntity;
+		} else {
+			toStore = MicroServiceUtils.deepCopyMap(originalEntity);
 		}
+		toStore.put(NGSIConstants.JSON_LD_ID, entityId);
+		if (originalTypes != null && !originalTypes.isEmpty()) {
+			toStore.put(NGSIConstants.JSON_LD_TYPE, originalTypes);
+		}
+		if (originalScopes != null) {
+			toStore.put(NGSIConstants.NGSI_LD_SCOPE, originalScopes);
+		}
+		EntityTools.addSysAttrs(toStore, request.getSendTimestamp());
 		return Tuple2.of(toStore, cId2RemoteHostEntity.values());
 	}
 
