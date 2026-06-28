@@ -380,8 +380,13 @@ public class JsonUtils {
 		// LdContextNotAvailable instead). A dead host fails fast (connection refused) regardless; the
 		// bound only matters for slow-but-reachable servers (e.g. smartdatamodels.org), so keep it
 		// generous (10s) to avoid spurious LdContextNotAvailable on legitimate large/slow contexts.
-		return webClient.getAbs(url.toExternalForm()).putHeader("Accept", ACCEPT_HEADER).timeout(10000).send().onFailure()
-				.recoverWithUni(e -> {
+		return webClient.getAbs(url.toExternalForm()).putHeader("Accept", ACCEPT_HEADER).timeout(10000).send()
+				// Remote @context fetches over the public internet drop intermittently (e.g. forge.etsi.org
+				// closing the connection under concurrent load), which otherwise surfaces as a spurious 503
+				// LdContextNotAvailable on an unrelated request. Retry the transient transport failure a
+				// couple of times before giving up.
+				.onFailure().retry().atMost(2)
+				.onFailure().recoverWithUni(e -> {
 					return Uni.createFrom().failure(new LdContextException(
 							"Can't retrieve " + url.toExternalForm() + ", because " + e.getLocalizedMessage()));
 				}).onItem().transformToUni(result -> {

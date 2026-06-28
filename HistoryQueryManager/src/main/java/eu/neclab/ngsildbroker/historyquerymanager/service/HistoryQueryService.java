@@ -173,7 +173,13 @@ public class HistoryQueryService implements CSourceHandler {
 									});
 						}
 
-					}));
+					})
+					// A federated Context Source that is unreachable / times out must NOT fail the whole
+					// query (NGSI-LD 6.3.17): recover to null so it is skipped in aggregation and the
+					// local (plus other reachable sources') results are still returned. Otherwise a dead
+					// registration (e.g. CommonBehaviours 045_01_03's my.csource.org) turns every later
+					// query into a 500.
+					.onFailure().recoverWithItem((QueryResult) null));
 		}
 		remoteCalls.add(0, local);
 		return Uni.combine().all().unis(remoteCalls).with(list -> {

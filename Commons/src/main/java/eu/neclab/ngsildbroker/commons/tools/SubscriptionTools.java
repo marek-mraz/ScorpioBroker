@@ -375,16 +375,19 @@ public class SubscriptionTools {
 								// supplied, fall back to the @context the subscription was created with
 								// (NGSI-LD 5.5.x Behaviour: jsonldContext defaults to the Subscription @context).
 								String ldCtx = potentialSub.getSubscription().getJsonldContext();
-								Object ldNotifyCtx;
+								List<String> ldCtxList;
 								if (ldCtx != null) {
-									ldNotifyCtx = Collections.singletonList(ldCtx);
+									ldCtxList = Collections.singletonList(ldCtx);
 								} else {
 									// strip the implicit core context so a single user @context renders as that URL
 									List<String> orig = context.getOriginalAtContext();
 									List<String> nonCore = orig.stream()
 											.filter(c -> !NGSIConstants.CORE_CONTEXT_URLS.contains(c)).toList();
-									ldNotifyCtx = nonCore.isEmpty() ? orig : nonCore;
+									ldCtxList = nonCore.isEmpty() ? orig : nonCore;
 								}
+								// NGSI-LD 5.2.3: the @context array is flattened to a single string when it
+								// has exactly one element.
+								Object ldNotifyCtx = ldCtxList.size() == 1 ? ldCtxList.get(0) : ldCtxList;
 								data.forEach(entry -> entry.put(NGSIConstants.JSON_LD_CONTEXT, ldNotifyCtx));
 								notification.put(NGSIConstants.NGSI_LD_DATA_SHORT, data);
 								break;
