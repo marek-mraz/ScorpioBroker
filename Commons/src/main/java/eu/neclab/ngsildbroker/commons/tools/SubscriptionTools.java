@@ -60,6 +60,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -339,6 +340,11 @@ public class SubscriptionTools {
 		}
 		options.add(potentialSub.getSubscription().getNotification().getFormat().toString());
 		return getContextForNotification(ldService, potentialSub).onItem().transformToUni(context -> {
+			// Capture multi-instance datasetIds BEFORE compaction (compaction strips datasetId): in the
+			// simplified/keyValues representation, multi-instance Attributes group under a "dataset" object
+			// keyed by datasetId (NGSI-LD 4.5.5). The generic compact path emits a flat array instead.
+			boolean keyValues = potentialSub.getSubscription().getNotification().getFormat() == Format.keyValues;
+			List<Map<String, List<String>>> datasetCapture = keyValues ? captureDatasetIds(entity) : null;
 			return ldService.compact(entity, null, context, HttpUtils.opts, -1, options, null).onItem()
 					.transform(compacted -> {
 						Map<String, Object> notification = Maps.newLinkedHashMap();
@@ -352,6 +358,9 @@ public class SubscriptionTools {
 						List<Map<String, Object>> data = (List<Map<String, Object>>) compacted
 								.getOrDefault(JsonLdConsts.GRAPH, List.of(compacted));
 						data.forEach(SubscriptionTools::fixDeletedLanguageMap);
+						if (datasetCapture != null) {
+							applyDatasetGrouping(data, datasetCapture, context);
+						}
 						int acceptHeader = HttpUtils.parseAcceptHeader(
 								List.of(potentialSub.getSubscription().getNotification().getEndPoint().getAccept()));
 						if (potentialSub.getSubscription().getNotification().getFormat() == Format.concise) {
@@ -405,6 +414,87 @@ public class SubscriptionTools {
 				if (lm instanceof Map<?, ?> lmMap && lmMap.size() == 1
 						&& NGSIConstants.NGSI_LD_NULL.equals(lmMap.get(NGSIConstants.JSON_LD_NONE))) {
 					((Map<String, Object>) attrMap).put(NGSIConstants.LANGUAGE_MAP, NGSIConstants.NGSI_LD_NULL);
+				}
+			}
+		}
+	}
+
+	// Per expanded entity (by index), record expandedAttrIRI -> ordered datasetId keys, but only for
+	// Attributes with >1 instance (multi-instance). The default instance (no datasetId) maps to "@none".
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, List<String>>> captureDatasetIds(Object expandedObj) {
+		List<Map<String, List<String>>> out = new ArrayList<>();
+		if (!(expandedObj instanceof List<?> list)) {
+			return out;
+		}
+		for (Object eo : list) {
+			Map<String, List<String>> perEntity = new HashMap<>();
+			if (eo instanceof Map<?, ?> em) {
+				for (Map.Entry<String, Object> e : ((Map<String, Object>) em).entrySet()) {
+					if (!(e.getValue() instanceof List<?> instances) || instances.size() < 2) {
+						continue;
+					}
+					List<String> dsKeys = new ArrayList<>(instances.size());
+					boolean attrInstances = true;
+					for (Object inst : instances) {
+						if (inst instanceof Map<?, ?> im
+								&& ((Map<String, Object>) im).containsKey(NGSIConstants.JSON_LD_TYPE)) {
+							dsKeys.add(datasetKey((Map<String, Object>) im));
+						} else {
+							attrInstances = false;
+							break;
+						}
+					}
+					if (attrInstances) {
+						perEntity.put(e.getKey(), dsKeys);
+					}
+				}
+			}
+			out.add(perEntity);
+		}
+		return out;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static String datasetKey(Map<String, Object> instance) {
+		Object ds = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		if (ds instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> dm) {
+			Object id = ((Map<String, Object>) dm).get(NGSIConstants.JSON_LD_ID);
+			if (id != null) {
+				return id.toString();
+			}
+		}
+		return NGSIConstants.JSON_LD_NONE;
+	}
+
+	// NGSI-LD 4.5.5: in simplified/keyValues, a multi-instance Attribute groups its values under a single
+	// "dataset" object keyed by datasetId (default -> "@none"). The compacted value is a flat array in the
+	// SAME order as the captured datasetIds; rebuild the grouped object. Skip on size/duplicate mismatch.
+	private static void applyDatasetGrouping(List<Map<String, Object>> data,
+			List<Map<String, List<String>>> capture, Context context) {
+		if (data.size() != capture.size()) {
+			return;
+		}
+		for (int i = 0; i < data.size(); i++) {
+			Map<String, Object> comp = data.get(i);
+			for (Map.Entry<String, List<String>> e : capture.get(i).entrySet()) {
+				String shortKey = context.compactIri(e.getKey());
+				List<String> dsKeys = e.getValue();
+				if (!(comp.get(shortKey) instanceof List<?> cl) || cl.size() != dsKeys.size()) {
+					continue;
+				}
+				Map<String, Object> dataset = new LinkedHashMap<>();
+				boolean ok = true;
+				for (int j = 0; j < dsKeys.size(); j++) {
+					if (dataset.put(dsKeys.get(j), cl.get(j)) != null) {
+						ok = false; // duplicate datasetId -> leave as-is
+						break;
+					}
+				}
+				if (ok) {
+					Map<String, Object> wrapper = new LinkedHashMap<>(1);
+					wrapper.put(NGSIConstants.DATASET, dataset);
+					comp.put(shortKey, wrapper);
 				}
 			}
 		}
