@@ -27,8 +27,16 @@ B2="${B2:-http://scorpio2:9090/ngsi-ld/v1}"
 B3="${B3:-http://scorpio3:9090/ngsi-ld/v1}"
 B4="${B4:-http://scorpio4:9090/ngsi-ld/v1}"
 B5="${B5:-http://scorpio5:9090/ngsi-ld/v1}"
-CALLBACK_HOST="${CALLBACK_HOST:-$(hostname)}"
 SUITE="${SUITE:-ngsi-ld-test-suite}"
+# Default callback host = this container's IP on the stack network, so the brokers can reach the
+# suite's notification/context mock servers. (This container has >1 network, so its hostname may
+# resolve to the wrong interface — use the stack-network IP explicitly.) CI overrides this with
+# CALLBACK_HOST=host.docker.internal.
+if [ -z "${CALLBACK_HOST:-}" ]; then
+  CALLBACK_HOST=$(docker inspect -f '{{(index .NetworkSettings.Networks "iop_scorpio-net").IPAddress}}' \
+    "$(hostname)" 2>/dev/null)
+  CALLBACK_HOST="${CALLBACK_HOST:-$(hostname)}"
+fi
 
 # 1. Bring up the single stack (build scorpio-local:latest from source + 5 brokers + health).
 [ "${SKIP_UP:-}" = 1 ] || ./dev/run-iop.sh
@@ -67,5 +75,14 @@ $ROBOT "${EXCLUDE[@]}" --outputdir results/DistributedOperations ./TP/NGSI-LD/Di
 $ROBOT --variable b1_url:"$B1" --variable b2_url:"$B2" --variable b3_url:"$B3" \
        --variable b4_url:"$B4" --variable b5_url:"$B5" --outputdir results/IOP IOP_TP || true
 
+# ---- Unified output (IDENTICAL for local and CI) -------------------------------------------------
+# 1) ONE combined report: merge every suite's output.xml into results/{output.xml,report.html,log.html}.
+.venv/bin/rebot --nostatusrc --name "ETSI NGSI-LD (5-broker stack)" \
+  --output results/output.xml --report results/report.html --log results/log.html \
+  results/*/output.xml || true
+# 2) ONE failures-only file (same generator/format everywhere): etsi-failures.md.
 python3 report_failures.py 'results/*/output.xml' etsi-failures.md || true
-echo "=== ETSI serial run complete -> $SUITE/etsi-failures.md (results/ has per-suite output.xml) ==="
+
+echo "=== ETSI serial run complete ==="
+echo "  full report : $SUITE/results/report.html  (+ output.xml, log.html)"
+echo "  failures    : $SUITE/etsi-failures.md"
