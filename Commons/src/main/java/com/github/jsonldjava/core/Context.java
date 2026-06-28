@@ -236,12 +236,18 @@ public class Context extends LinkedHashMap<String, Object> {
 				// 3.2.3: Dereference context
 
 				if (uri != null && !uri.startsWith(microServiceUtils.getContextServerURL())) {
-					if (microServiceUtils.gatewayAndAtContextDiffer()) {
-						if (uri.startsWith(microServiceUtils.getGatewayString())) {
-							uri = microServiceUtils.getContextServerURL()
-									+ uri.substring(microServiceUtils.getGatewayString().length());
-						}
+					if (microServiceUtils.gatewayAndAtContextDiffer()
+							&& uri.startsWith(microServiceUtils.getGatewayString())) {
+						// A @context URL served by THIS broker via its external gateway address
+						// (e.g. a Hosted/ImplicitlyCreated context). Rewrite the gateway address to the
+						// internal atcontext address so it is fetched locally, not over the network.
+						uri = microServiceUtils.getContextServerURL()
+								+ uri.substring(microServiceUtils.getGatewayString().length());
 					} else {
+						// Any other (external) @context URL: route it through the atcontext createcache
+						// endpoint so the broker downloads it once and registers it as a "Cached"
+						// @context (NGSI-LD 5.13.1). Previously, when the gateway and atcontext addresses
+						// differed, external URLs were loaded directly and never cached.
 						String encodedUrl = URLEncoder.encode(uri, StandardCharsets.UTF_8);
 						uri = microServiceUtils.getContextServerURL() + NGSIConstants.JSONLD_CONTEXTS + "createcache/"
 								+ encodedUrl;
