@@ -518,7 +518,9 @@ public class Subscription implements Serializable {
 				case NGSIConstants.NGSI_LD_FORMAT:
 					String formatString = (String) ((List<Map<String, Object>>) entry.getValue()).get(0)
 							.get(NGSIConstants.JSON_LD_VALUE);
-					if (formatString.equalsIgnoreCase("keyvalues")) {
+					// NGSI-LD 5.8.6 / Table 5.2.14.1-1: format is normalized | concise | simplified, where
+					// "simplified" is a synonym for "keyValues".
+					if (formatString.equalsIgnoreCase("keyvalues") || formatString.equalsIgnoreCase("simplified")) {
 						format = Format.keyValues;
 					}
 					if (formatString.equalsIgnoreCase("concise")) {

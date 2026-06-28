@@ -2,6 +2,7 @@ package eu.neclab.ngsildbroker.entityhandler.services;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -557,6 +558,109 @@ public class EntityService implements CSourceHandler {
 		unis.add(localUni);
 		return Uni.combine().all().unis(unis).with(list -> getResult(list));
 
+	}
+
+	// NGSI-LD 5.6.21 / 6.4.3.3 Purge Entities. Resolve the matching set, then delete each match (no
+	// keep/drop), strip the listed attributes (drop), or strip all-but-listed attributes (keep).
+	// useListQuery -> reuse the broker's GET /entities (full type/q/geo/local semantics); otherwise the
+	// selector is id-only, which the list-query endpoint rejects, so retrieve each id directly.
+	public Uni<Void> purgeEntities(String tenant, String cleanedQuery, String idParam, boolean useListQuery,
+			String keep, String drop, boolean localOnly, Context context, io.vertx.core.MultiMap headersFromReq,
+			ViaHeaders viaHeaders) {
+		final boolean dropMode = drop != null && !drop.isEmpty();
+		final Set<String> dropSet = dropMode ? new HashSet<>(Arrays.asList(drop.split(","))) : Set.of();
+		final boolean keepMode = keep != null && !keep.isEmpty();
+		final Set<String> keepSet = keepMode ? new HashSet<>(Arrays.asList(keep.split(","))) : Set.of();
+		String link = headersFromReq.get("Link");
+		String tenantH = headersFromReq.get(NGSIConstants.TENANT_HEADER);
+
+		Uni<List<JsonObject>> matchesUni;
+		if (useListQuery) {
+			String url = microServiceUtils.getGatewayString() + "ngsi-ld/v1/entities"
+					+ (cleanedQuery == null || cleanedQuery.isEmpty() ? "" : "?" + cleanedQuery);
+			matchesUni = sendForJson(url, tenantH, link).onItem().transform(resp -> {
+				List<JsonObject> out = new ArrayList<>();
+				try {
+					JsonArray arr = resp.bodyAsJsonArray();
+					for (int i = 0; i < arr.size(); i++) {
+						out.add(arr.getJsonObject(i));
+					}
+				} catch (Exception ignored) {
+				}
+				return out;
+			});
+		} else {
+			// id-only selector: retrieve each id directly (GET /entities/{id}); skip 404s.
+			List<Uni<JsonObject>> idUnis = new ArrayList<>();
+			for (String id : idParam.split(",")) {
+				String url = microServiceUtils.getGatewayString() + "ngsi-ld/v1/entities/" + id.trim();
+				idUnis.add(sendForJson(url, tenantH, link).onItem().transform(resp -> {
+					try {
+						return resp.statusCode() == 200 ? resp.bodyAsJsonObject() : null;
+					} catch (Exception e) {
+						return null;
+					}
+				}));
+			}
+			matchesUni = Uni.combine().all().unis(idUnis).with(list -> {
+				List<JsonObject> out = new ArrayList<>();
+				for (Object o : list) {
+					if (o != null) {
+						out.add((JsonObject) o);
+					}
+				}
+				return out;
+			});
+		}
+
+		return matchesUni.onItem().transformToUni(entities -> {
+			if (entities.isEmpty()) {
+				return Uni.createFrom().voidItem();
+			}
+			List<Uni<NGSILDOperationResult>> unis = new ArrayList<>();
+			for (JsonObject entity : entities) {
+				String id = entity.getString("id");
+				if (id == null) {
+					continue;
+				}
+				if (!dropMode && !keepMode) {
+					unis.add(deleteEntity(tenant, id, context, headersFromReq, viaHeaders, localOnly));
+				} else if (dropMode) {
+					for (String attr : dropSet) {
+						unis.add(deleteAttribute(tenant, id, context.expandIri(attr.trim(), false, true, null, null),
+								null, true, context, headersFromReq, viaHeaders));
+					}
+				} else {
+					for (String key : entity.fieldNames()) {
+						if (key.equals("id") || key.equals("type") || key.equals("@context")
+								|| key.equals(NGSIConstants.SCOPE) || keepSet.contains(key)) {
+							continue;
+						}
+						unis.add(deleteAttribute(tenant, id, context.expandIri(key, false, true, null, null), null,
+								true, context, headersFromReq, viaHeaders));
+					}
+				}
+			}
+			if (unis.isEmpty()) {
+				return Uni.createFrom().voidItem();
+			}
+			return Uni.combine().all().unis(unis).with(list -> (Void) null);
+		});
+	}
+
+	// Self-call GET as compact application/json, forwarding tenant + @context Link so matching and
+	// short-name compaction match the original request.
+	private Uni<io.vertx.mutiny.ext.web.client.HttpResponse<Buffer>> sendForJson(String url, String tenantH,
+			String link) {
+		var req = webClient.getAbs(url);
+		if (tenantH != null) {
+			req.putHeader(NGSIConstants.TENANT_HEADER, tenantH);
+		}
+		if (link != null) {
+			req.putHeader("Link", link);
+		}
+		req.putHeader("Accept", AppConstants.NGB_APPLICATION_JSON);
+		return req.send();
 	}
 
 	private List<NGSILDOperationResult> handleBatchDeleteResponse(HttpResponse<Buffer> response, Throwable failure,

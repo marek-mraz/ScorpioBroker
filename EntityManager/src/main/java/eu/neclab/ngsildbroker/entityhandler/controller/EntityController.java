@@ -29,6 +29,7 @@ import eu.neclab.ngsildbroker.commons.tools.MicroServiceUtils;
 import eu.neclab.ngsildbroker.entityhandler.services.EntityService;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.MultiMap;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -513,10 +514,72 @@ public class EntityController {// implements EntityHandlerInterface {
 
 	@DELETE
 	@Path("/entities")
-	public Uni<RestResponse<Object>> purgeEntities(HttpServerRequest request) {
-		return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
-				new ResponseException(ErrorType.BadRequestData, "Purge entities requires query parameters"),
-				HttpUtils.getTenant(request)));
+	public Uni<RestResponse<Object>> purgeEntities(HttpServerRequest request, @QueryParam("keep") String keep,
+			@QueryParam("drop") String drop, @QueryParam("local") String localOnlyS) {
+		String tenant = HttpUtils.getTenant(request);
+		// NGSI-LD 5.6.21: keep (exclusionary) and drop (restrictive) are mutually exclusive.
+		if (keep != null && !keep.isEmpty() && drop != null && !drop.isEmpty()) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(
+					new ResponseException(ErrorType.BadRequestData, "keep and drop cannot be used together"), tenant));
+		}
+		boolean localOnly;
+		ViaHeaders viaHeaders;
+		try {
+			localOnly = HttpUtils.parseBoolean(localOnlyS);
+			viaHeaders = new ViaHeaders(request.headers().getAll(HttpHeaders.VIA),
+					microServiceUtils.getSourceAlias(tenant));
+		} catch (ResponseException e) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(e, tenant));
+		}
+		// NGSI-LD 5.6.21.4: at least one selector (type/attrs/q/geoquery/local) must be present, else
+		// BadRequestData ("too wide query"). An explicit id list is the narrowest selector and is also
+		// accepted; idPattern ALONE is not (it can be too wide, e.g. ".*"). The list-query endpoint needs
+		// one of type/attrs/geometry/q, so an id-only selector is resolved by direct retrieval instead.
+		MultiMap params = request.params();
+		boolean broadFilter = params.contains("type") || params.contains("attrs") || params.contains("geometry")
+				|| params.contains("q");
+		String idParam = params.get("id");
+		if (!localOnly && !broadFilter && idParam == null) {
+			return Uni.createFrom().item(HttpUtils.handleControllerExceptions(new ResponseException(
+					ErrorType.BadRequestData, "At least one of type, attrs, geometry, q or id is required, or local scope"),
+					tenant));
+		}
+		// keep/drop are purge-only; strip them before reusing the query endpoint (which rejects them).
+		String cleanedQuery = stripQueryParams(request.query(), "keep", "drop");
+		boolean useListQuery = broadFilter || localOnly;
+		return ldService.parse(HttpUtils.getAtContext(request)).onItem().transformToUni(context -> {
+			return entityService
+					.purgeEntities(tenant, cleanedQuery, idParam, useListQuery, keep, drop, localOnly, context,
+							request.headers(), viaHeaders)
+					.onItem().transform(v -> RestResponse.noContent());
+		}).onFailure().recoverWithItem(e -> {
+			return HttpUtils.handleControllerExceptions(e, tenant);
+		});
+	}
+
+	// Remove the named params (e.g. keep/drop) from a raw, URL-encoded query string, preserving the rest.
+	private static String stripQueryParams(String query, String... names) {
+		if (query == null || query.isEmpty()) {
+			return "";
+		}
+		StringBuilder out = new StringBuilder();
+		for (String part : query.split("&")) {
+			String key = part.contains("=") ? part.substring(0, part.indexOf('=')) : part;
+			boolean drop = false;
+			for (String n : names) {
+				if (key.equals(n)) {
+					drop = true;
+					break;
+				}
+			}
+			if (!drop) {
+				if (out.length() > 0) {
+					out.append('&');
+				}
+				out.append(part);
+			}
+		}
+		return out.toString();
 	}
 
 	@PUT

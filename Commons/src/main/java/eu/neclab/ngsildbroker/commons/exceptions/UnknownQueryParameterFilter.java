@@ -29,7 +29,8 @@ public class UnknownQueryParameterFilter implements ContainerRequestFilter {
 			"jsonKeys", "qtoken", "maxDistance", "observationspace", "operationspace",
 			// additional parameters Scorpio's controllers accept (@QueryParam union)
 			"orderBy", "bbox", "collation", "kind", "minDistance", "n", "nOrder", "offsetN", "orderFrom",
-			"orderGeometry", "orderN", "reload", "splitEntities");
+			"orderGeometry", "orderN", "reload", "splitEntities",
+			"keep", "drop");
 
 	@Override
 	public void filter(ContainerRequestContext ctx) {
