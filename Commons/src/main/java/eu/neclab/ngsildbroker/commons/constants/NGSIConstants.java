@@ -617,6 +617,8 @@ public interface NGSIConstants {
 	public static final String FIELD_DATASET_ID = "\"datasetId\": \"";
 	public static final String ENTITY = "entity";
 	public static final String ENTITY_LIST = "entityList";
+	// simplified-representation wrapper for multi-instance (datasetId) Attributes (NGSI-LD 4.5.5)
+	public static final String DATASET = "dataset";
 	public static final String UNIT_DATE_TIME = "DateTime";
 	public static final String QUERY_PARAMETER_LOCAL_ONLY = "local";
 	public static final String QUERY_PARAMETER_CONTAINED_BY = "containedBy";

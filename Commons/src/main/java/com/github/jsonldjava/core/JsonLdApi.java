@@ -1143,12 +1143,49 @@ public class JsonLdApi {
 			}
 		}
 
+		// Multi-attribute simplified representation (NGSI-LD 4.5.5, Example 13): when keyValues yields
+		// several instances (one value each, in input order) of an Attribute that uses datasetId, they
+		// are grouped under a single "dataset" object keyed by datasetId (default instance -> "@none").
+		if (keyValue && !temporal && result.size() > 1 && result.size() == expandedAttrib.size()) {
+			Map<String, Object> datasetMap = new LinkedHashMap<>();
+			boolean ok = true;
+			for (int i = 0; i < expandedAttrib.size(); i++) {
+				String dsKey = extractDatasetKey(expandedAttrib.get(i));
+				if (dsKey == null || datasetMap.containsKey(dsKey)) {
+					ok = false;
+					break;
+				}
+				datasetMap.put(dsKey, result.get(i));
+			}
+			if (ok) {
+				Map<String, Object> wrapper = new HashMap<>(1);
+				wrapper.put(NGSIConstants.DATASET, datasetMap);
+				return wrapper;
+			}
+		}
+
 		// ponytail: temporal representation keeps attribute instances as an array
 		// even when there is a single instance (NGSI-LD 4.5.6); non-temporal collapses.
 		if (result.size() == 1 && !temporal) {
 			return result.get(0);
 		}
 		return result;
+	}
+
+	// the simplified-representation key (datasetId IRI, or "@none" for the default instance) of one
+	// expanded Attribute instance; null if it is not a reified Attribute map.
+	private String extractDatasetKey(Object instance) {
+		if (!(instance instanceof Map<?, ?> m)) {
+			return null;
+		}
+		Object ds = ((Map<String, Object>) m).get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		if (ds instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> dm) {
+			Object id = ((Map<String, Object>) dm).get(NGSIConstants.JSON_LD_ID);
+			if (id != null) {
+				return id.toString();
+			}
+		}
+		return NGSIConstants.JSON_LD_NONE;
 	}
 
 	private void commonSubAttribsCompaction(Map<String, Object> resultMap, Map<String, Object> attribMap,

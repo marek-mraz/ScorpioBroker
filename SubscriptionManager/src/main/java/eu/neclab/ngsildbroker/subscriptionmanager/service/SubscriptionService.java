@@ -1005,9 +1005,16 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						// deletedAt instead.
 						List<Map<String, Object>> tmp = Lists.newArrayList();
 						boolean showChanges = potentialSub.getSubscription().getNotification().getShowChanges();
+						boolean delSysAttrs = potentialSub.getSubscription().getNotification().getSysAttrs();
 						String delAttr = message.getAttribName();
 						String delDataset = message.getDatasetId();
 						boolean delAll = message.isDeleteAll();
+						Set<String> delWatched = potentialSub.getSubscription().getAttributeNames();
+						if (delWatched != null && !delWatched.isEmpty() && !delWatched.contains(delAttr)) {
+							// the deleted Attribute is not among the watched Attributes -> no notification
+							// (NGSI-LD 5.8.6 attributeDeleted is gated by watchedAttributes).
+							continue;
+						}
 						prevPayloadToUse.values().forEach(payloads -> {
 							payloads.forEach(payload -> {
 								List<Map<String, Object>> attribs = (List<Map<String, Object>>) payload.get(delAttr);
@@ -1019,7 +1026,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 										if (showChanges) {
 											putOldAttribFromDelete(attrib, message.getSendTimestamp());
 										} else {
-											nullifyDeletedAttrib(attrib);
+											tombstoneAttribForDelete(attrib, message.getSendTimestamp(), delSysAttrs);
 										}
 									}
 								}
@@ -1033,6 +1040,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 					case AppConstants.BATCH_DELETE_REQUEST: {
 						List<Map<String, Object>> tmp = Lists.newArrayList();
 						boolean delShowChanges = potentialSub.getSubscription().getNotification().getShowChanges();
+						Set<String> delTriggers = potentialSub.getSubscription().getNotificationTrigger();
+						boolean entityDeletedTrigger = delTriggers
+								.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_DELETED);
+						Set<String> watchedForDelete = potentialSub.getSubscription().getAttributeNames();
 						prevPayloadToUse.values().forEach(payloads -> {
 							payloads.forEach(origPayload -> {
 								// in-memory messaging passes the payload by reference; deep-copy before mutating so
@@ -1042,6 +1053,50 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 									// entityDeleted + showChanges (NGSI-LD 5.8.6): every attribute is shown with
 									// its previousValue/Object/... and the urn:ngsi-ld:null tombstone.
 									applyShowChangesDelete(payload, message.getSendTimestamp());
+								} else if (entityDeletedTrigger) {
+									// entityDeleted without showChanges (NGSI-LD 5.8.6 / 4.5.23): the notified entity
+									// is a tombstone - only the entity skeleton (id, type, scope, sysAttrs) plus
+									// deletedAt; the former attributes are not included. sysAttrs visibility is then
+									// applied by the notification compaction.
+									payload.keySet().removeIf(k -> !k.equals(NGSIConstants.JSON_LD_ID)
+											&& !k.equals(NGSIConstants.JSON_LD_TYPE)
+											&& !k.equals(NGSIConstants.NGSI_LD_CREATED_AT)
+											&& !k.equals(NGSIConstants.NGSI_LD_MODIFIED_AT)
+											&& !k.equals(NGSIConstants.NGSI_LD_SCOPE));
+								} else {
+									// attributeDeleted on an Entity delete (NGSI-LD 5.8.6): the deleted Entity's
+									// watched Attributes are tombstoned (urn:ngsi-ld:null + per-attribute deletedAt,
+									// sysAttrs permitting); non-watched Attributes are dropped.
+									payload.keySet().removeIf(k -> !k.equals(NGSIConstants.JSON_LD_ID)
+											&& !k.equals(NGSIConstants.JSON_LD_TYPE)
+											&& !k.equals(NGSIConstants.NGSI_LD_CREATED_AT)
+											&& !k.equals(NGSIConstants.NGSI_LD_MODIFIED_AT)
+											&& !k.equals(NGSIConstants.NGSI_LD_SCOPE)
+											&& !(watchedForDelete == null || watchedForDelete.isEmpty()
+													|| watchedForDelete.contains(k)));
+									for (Entry<String, Object> ae : payload.entrySet()) {
+										if (ae.getValue() instanceof List<?> insts && !NGSIConstants.NGSI_LD_CREATED_AT
+												.equals(ae.getKey())
+												&& !NGSIConstants.NGSI_LD_MODIFIED_AT.equals(ae.getKey())) {
+											for (Object o : insts) {
+												if (o instanceof Map<?, ?> inst
+														&& (((Map<String, Object>) inst)
+																.containsKey(NGSIConstants.NGSI_LD_HAS_VALUE)
+																|| ((Map<String, Object>) inst)
+																		.containsKey(NGSIConstants.NGSI_LD_HAS_OBJECT)
+																|| ((Map<String, Object>) inst).containsKey(
+																		NGSIConstants.NGSI_LD_HAS_LANGUAGE_MAP)
+																|| ((Map<String, Object>) inst)
+																		.containsKey(NGSIConstants.NGSI_LD_HAS_JSON)
+																|| ((Map<String, Object>) inst).containsKey(
+																		NGSIConstants.NGSI_LD_HAS_VOCAB))) {
+													tombstoneAttribForDelete((Map<String, Object>) inst,
+															message.getSendTimestamp(), potentialSub.getSubscription()
+																	.getNotification().getSysAttrs());
+												}
+											}
+										}
+									}
 								}
 								payload.put(NGSIConstants.NGSI_LD_DELETED_AT,
 										List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME,
@@ -1379,6 +1434,28 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		}
 	}
 
+	// attributeDeleted-on-entity-delete: nullify an attribute instance (urn:ngsi-ld:null) but keep its
+	// createdAt/modifiedAt and add a per-instance deletedAt. createdAt/modifiedAt/deletedAt are system
+	// attributes; the notification compaction removes them again when the subscription has no sysAttrs.
+	private void tombstoneAttribForDelete(Map<String, Object> instance, long ts, boolean sysAttrs) {
+		Object created = instance.get(NGSIConstants.NGSI_LD_CREATED_AT);
+		Object modified = instance.get(NGSIConstants.NGSI_LD_MODIFIED_AT);
+		nullifyDeletedAttrib(instance);
+		if (created != null) {
+			instance.put(NGSIConstants.NGSI_LD_CREATED_AT, created);
+		}
+		if (modified != null) {
+			instance.put(NGSIConstants.NGSI_LD_MODIFIED_AT, modified);
+		}
+		// per-attribute deletedAt is a system attribute: only emitted when the subscription requests
+		// sysAttrs (unlike the entity-level deletedAt, which is always present in a delete notification).
+		if (sysAttrs) {
+			instance.put(NGSIConstants.NGSI_LD_DELETED_AT,
+					List.of(Map.of(NGSIConstants.JSON_LD_TYPE, NGSIConstants.NGSI_LD_DATE_TIME,
+							NGSIConstants.JSON_LD_VALUE, SerializationTools.toDateTimeString(ts))));
+		}
+	}
+
 	private void putOldAttribFromDelete(Map<String, Object> oldEntry, long timeStamp) {
 		// NGSI-LD showChanges (5.8.6): a deleted attribute is shown with the null value sentinel and
 		// the previous value/object/... — NOT a deletedAt member.
@@ -1624,7 +1701,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 						|| notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_CREATED);
 			case AppConstants.DELETE_REQUEST:
 			case AppConstants.BATCH_DELETE_REQUEST:
-				return notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_DELETED);
+				// Deleting an Entity also deletes its Attributes, so an attributeDeleted-triggered
+				// subscription must also be notified (NGSI-LD 5.8.6).
+				return notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_DELETED)
+						|| notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_DELETED);
 			case AppConstants.DELETE_ATTRIBUTE_REQUEST:
 				return notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ENTITY_UPDATED)
 						|| notificationTriggers.contains(NGSIConstants.NGSI_LD_NOTIFICATION_TRIGGER_ATTRIBUTE_DELETED);
@@ -1792,9 +1872,15 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		return req.sendBuffer(Buffer.buffer(batchString)).onItem().transform(resp -> {
 			if (resp != null && resp.statusCode() == 200) {
 				JsonArray jsonArray = resp.bodyAsJsonArray();
+				// join (inline): the query result carries the linked entity embedded under each
+				// relationship instance (NGSI_LD_ENTITY). The prev/new merge below rebuilds the
+				// notification from the change payloads, which don't carry it, so keep a reference
+				// to the enriched query entities and re-apply the embeddings afterwards (5.8.6 / 4.5.23).
+				Map<String, Map<String, Object>> joinSource = Maps.newHashMap();
 				jsonArray.forEach(entityObj -> {
 					Map<String, Object> entity = ((JsonObject) entityObj).getMap();
 					String entityId = (String) entity.get(NGSIConstants.JSON_LD_ID);
+					joinSource.put(entityId, entity);
 					List<Map<String, Object>> prevPayloadList = prevPayloadToUse.get(entityId);
 					if (prevPayloadList != null) {
 						for (Map<String, Object> prevPayload : prevPayloadList) {
@@ -1816,6 +1902,14 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 				});
 				List<Map<String, Object>> dataToNotify = mergePrevAndNew(payloadToUse, prevPayloadToUse,
 						request.getSubscription().getNotification().getShowChanges());
+				if (request.doJoin()) {
+					for (Map<String, Object> notifyEntity : dataToNotify) {
+						Map<String, Object> src = joinSource.get(notifyEntity.get(NGSIConstants.JSON_LD_ID));
+						if (src != null) {
+							reapplyJoinEntities(src, notifyEntity);
+						}
+					}
+				}
 				PickTerm pick = request.getSubscription().getNotification().getPick();
 				if (pick != null) {
 					Iterator<Map<String, Object>> it = dataToNotify.iterator();
@@ -1853,6 +1947,45 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			return null;
 		});
 
+	}
+
+	// join (inline): copy the embedded linked entity/entityList members from the enriched query
+	// result (src) onto the matching attribute instances of the merged notification entity (dst).
+	@SuppressWarnings("unchecked")
+	private void reapplyJoinEntities(Map<String, Object> src, Map<String, Object> dst) {
+		for (Entry<String, Object> e : src.entrySet()) {
+			if (!(e.getValue() instanceof List<?> srcList) || !(dst.get(e.getKey()) instanceof List<?> dstList)) {
+				continue;
+			}
+			for (Object dstObj : dstList) {
+				if (!(dstObj instanceof Map<?, ?> dstInst)) {
+					continue;
+				}
+				Object dstDs = ((Map<String, Object>) dstInst).get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+				for (Object srcObj : srcList) {
+					if (!(srcObj instanceof Map<?, ?> srcInst)) {
+						continue;
+					}
+					Map<String, Object> srcM = (Map<String, Object>) srcInst;
+					if (!srcM.containsKey(NGSIConstants.NGSI_LD_ENTITY)
+							&& !srcM.containsKey(NGSIConstants.NGSI_LD_ENTITY_LIST)) {
+						continue;
+					}
+					Object srcDs = srcM.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+					if ((dstDs == null && srcDs == null) || (dstDs != null && dstDs.equals(srcDs))) {
+						if (srcM.containsKey(NGSIConstants.NGSI_LD_ENTITY)) {
+							((Map<String, Object>) dstInst).put(NGSIConstants.NGSI_LD_ENTITY,
+									srcM.get(NGSIConstants.NGSI_LD_ENTITY));
+						}
+						if (srcM.containsKey(NGSIConstants.NGSI_LD_ENTITY_LIST)) {
+							((Map<String, Object>) dstInst).put(NGSIConstants.NGSI_LD_ENTITY_LIST,
+									srcM.get(NGSIConstants.NGSI_LD_ENTITY_LIST));
+						}
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	private void mergePrevIntoQueryResult(Map<String, Object> prevPayload, Map<String, Object> dupl) {

@@ -1,0 +1,68 @@
+version: '3.8'
+
+# Shared network so your dev tools and tests can resolve internal hostnames
+networks:
+  scorpio-net:
+    name: scorpio-net
+
+services:
+  # ---------------------------------------------------------
+  # DEVELOPMENT & TESTING DEPENDENCIES (For Local Java Dev)
+  # ---------------------------------------------------------
+  postgres:
+    image: imresamu/postgis:16-3.5
+    container_name: scorpio-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - scorpio-net
+
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: scorpio-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # NOTE: For local Java dev, you may need to add "127.0.0.1 kafka" to your /etc/hosts
+      # so your local Quarkus app can reach it, or use standard Docker network attachment.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    networks:
+      - scorpio-net
+
+  mqtt:
+    image: emqx:latest
+    container_name: scorpio-mqtt
+    ports:
+      - "1883:1883"
+    networks:
+      - scorpio-net
+
+  testserver:
+    image: testserver
+    container_name: scorpio-testserver
+    ports:
+      - "8080:8080"
+    networks:
+      - scorpio-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -456,7 +456,9 @@ public class MicroServiceUtils {
 			} else if (originalValue instanceof Boolean) {
 				copiedValue = ((Boolean) originalValue).booleanValue();
 			} else if (originalValue == null) {
-				continue;
+				// preserve JSON null members (e.g. inside a JsonProperty @json value); dropping them
+				// loses data in notification previousJson/json (NGSI-LD 5.8.6). Mirrors deppCopyList.
+				copiedValue = null;
 			} else {
 				copiedValue = originalValue.toString();
 			}
