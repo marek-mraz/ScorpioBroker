@@ -61,7 +61,7 @@ EXCLUDE=(--exclude iop)
 rm -rf results && mkdir -p results
 for s in CommonBehaviours \
          ContextInformation/Consumption ContextInformation/Provision ContextInformation/Subscription \
-         ContextSource; do
+         ContextSource jsonldContext; do
   ./clean_db.sh >/dev/null 2>&1 || true
   name="${s//\//-}"
   $ROBOT "${EXCLUDE[@]}" --outputdir "results/$name" "./TP/NGSI-LD/$s" || true
