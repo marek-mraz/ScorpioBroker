@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,7 @@ import eu.neclab.ngsildbroker.commons.datatypes.requests.subscription.UpdateSubs
 import eu.neclab.ngsildbroker.commons.datatypes.results.CRUDSuccess;
 import eu.neclab.ngsildbroker.commons.datatypes.results.NGSILDOperationResult;
 import eu.neclab.ngsildbroker.commons.datatypes.results.QueryResult;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.DataSetIdTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.OmitTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.terms.PickTerm;
@@ -933,6 +935,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 				} else {
 					idsTbu = message.getIds();
 				}
+				// Snapshot of the PRIMARY (matched/changed) entity ids, before queryFromSubscription appends
+				// join-pulled linked entities to payloadToUse. Scopes the notification.attributes projection
+				// below to primary entities only (NGSI-LD 4.5.23 / 5.8.6).
+				Set<String> primaryIds = idsTbu == null ? new HashSet<>() : new HashSet<>(idsTbu);
 				unis.add(
 						queryFromSubscription(potentialSub, message.getTenant(), idsTbu, prevPayloadToUse, payloadToUse)
 								.onItem().transformToUni(tbs -> {
@@ -970,6 +976,20 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 										}
 									}
 									tbs.addAll(toAddLater);
+									// notification.attributes (Table 5.2.14.1-1, synonym for pick): reduce each
+									// PRIMARY entity to the listed attributes. Runs here, after the change payload
+									// was re-merged onto the entity above, so the triggering attribute is dropped
+									// too. Linked entities pulled in by join keep all their attributes.
+									AttrsQueryTerm attrsTerm = potentialSub.getSubscription().getNotification()
+											.getAttrs();
+									if (attrsTerm != null && attrsTerm.getAttrs() != null
+											&& !attrsTerm.getAttrs().isEmpty()) {
+										for (Map<String, Object> e : tbs) {
+											if (primaryIds.contains(e.get(NGSIConstants.JSON_LD_ID))) {
+												attrsTerm.calculateEntity(e);
+											}
+										}
+									}
 									return sendNotification(potentialSub, tbs);
 								}));
 

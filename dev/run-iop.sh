@@ -43,6 +43,19 @@ if docker network inspect "${PROJECT}_scorpio-net" >/dev/null 2>&1; then
     || true
 fi
 
+# 2c. MQTT notification suite (058_*): the suite launches a mosquitto container on the
+#     `compose-files_default` network (hardcoded in resources/mqttUtils/MqttUtils.resource) named
+#     `ngsi-ld-test-suite-mosquitto-container`. For the brokers to deliver to it and the suite's MQTT
+#     client (running here) to reach it, every broker + this container must share that network. Ensure
+#     it exists and attach them. Idempotent; harmless when MQTT tests aren't run.
+docker network create compose-files_default >/dev/null 2>&1 || true
+for n in 1 2 3 4 5; do
+  cid=$(docker compose -p "$PROJECT" -f "$COMPOSE" ps -q "scorpio${n}" 2>/dev/null)
+  [ -n "$cid" ] && docker network connect compose-files_default "$cid" 2>/dev/null || true
+done
+docker network connect compose-files_default "$(hostname)" 2>/dev/null || true
+echo ">>> attached brokers + $(hostname) to compose-files_default (MQTT 058_* reachability)"
+
 # 3. Health-check each broker. Use BN base URL if set (CI reaches the brokers on their published
 #    ports via host.docker.internal), else by in-network hostname (docker-out-of-docker dev box,
 #    where published ports land on the VM host, not this container's localhost).

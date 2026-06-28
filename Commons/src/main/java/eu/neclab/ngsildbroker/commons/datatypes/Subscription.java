@@ -425,14 +425,6 @@ public class Subscription implements Serializable {
 					List<Map<String, Object>> watchedAttribs = (List<Map<String, Object>>) entry.getValue();
 					String attrs = getCompactedAttrsQueryString(watchedAttribs, context);
 					notifyParam.setAttrs(QueryParser.parseAttrs(attrs, context));
-					// NGSI-LD Table 5.2.14.1-1: `attributes` is a (deprecated) synonym for `pick` — the listed
-					// attributes are the ones included in the notification payload body. Build a pick
-					// projection too (unless an explicit `pick` is also given) so the body is reduced.
-					if (notifyParam.getPick() == null) {
-						PickTerm attrPick = new PickTerm();
-						QueryParser.parseProjectionTerm(attrPick, attrs, context);
-						notifyParam.setPick(attrPick);
-					}
 					break;
 				case NGSIConstants.NGSI_LD_PICK:
 					List<Map<String, Object>> pickList = (List<Map<String, Object>>) entry.getValue();
