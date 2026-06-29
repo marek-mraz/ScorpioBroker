@@ -314,6 +314,7 @@ public class RegistrationEntry {
 					String operation = opEntry.get(NGSIConstants.JSON_LD_VALUE);
 					switch (operation) {
 						case NGSIConstants.NGSI_LD_REG_OPERATION_FEDERATION_OPS:
+							// NOTE: per NGSI-LD Table 4.20-2 federationOps also includes queryBatch, but Scorpio's
 							tmpRetrieveEntity = tmpQueryEntity = tmpRetrieveEntityTypes = tmpRetrieveEntityTypeDetails = tmpRetrieveEntityTypeInfo = tmpRetrieveAttrTypes = tmpRetrieveAttrTypeDetails = tmpRetrieveAttrTypeInfo = tmpCreateSubscription = tmpUpdateSubscription = tmpRetrieveSubscription = tmpQuerySubscription = tmpDeleteSubscription = tmpQueryEntityMap = tmpCreateEntityMap = tmpUpdateEntityMap = tmpDeleteEntityMap = tmpRetrieveEntityMap = true;
 							break;
 						case NGSIConstants.NGSI_LD_REG_OPERATION_UPDATE_OPS:
@@ -451,6 +452,9 @@ public class RegistrationEntry {
 					}
 				}
 			} else {
+				// NGSI-LD 4.20: when no operations are specified the default set is "federationOps".
+				// queryBatch is intentionally NOT enabled here — see the federationOps case above for why
+				// (forward dispatch would prefer POST batch and regress queryEntity forwarding).
 				tmpRetrieveEntity = true;
 				tmpQueryEntity = true;
 				tmpRetrieveEntityTypes = true;

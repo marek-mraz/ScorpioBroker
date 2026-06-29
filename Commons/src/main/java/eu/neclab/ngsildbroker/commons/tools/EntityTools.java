@@ -668,7 +668,11 @@ public final class EntityTools {
 						tmp.put(NGSIConstants.ID, id);
 					}
 					if (type != null) {
-						tmp.put(NGSIConstants.TYPE, type);
+						// The batch query body carries an @context, so the type must be the COMPACTED term
+						// (e.g. "Vehicle"), exactly as the query-by-GET path forwards it. Sending the full
+						// expanded IRI made matching Context Sources fail to recognise the type. (NGSI-LD
+						// 5.5.7 term/IRI handling; mirrors the GET /entities?type= forward below.)
+						tmp.put(NGSIConstants.TYPE, context != null ? context.compactIri(type) : type);
 					}
 					if (idPattern != null) {
 						tmp.put(NGSIConstants.QUERY_PARAMETER_IDPATTERN, idPattern);
@@ -1003,7 +1007,11 @@ public final class EntityTools {
 						it.remove();
 						continue;
 					}
-					if (!regEntry.queryBatch() && !regEntry.queryEntity()) {
+					// queryEntity/queryBatch cover the query path; retrieveEntity must also be admitted so a
+					// retrieve-by-id (NGSI-LD 5.7.1.4) can be forwarded to Context Sources that only support
+					// the retrieveEntity operation. Such hosts produce no forward for a real query (the
+					// retrieve forward is id-gated), so this does not affect query semantics.
+					if (!regEntry.queryBatch() && !regEntry.queryEntity() && !regEntry.retrieveEntity()) {
 						continue;
 					}
 					QueryInfos ogQueryInfo = regEntry.matches(id, idPattern, typeQuery, attrsQuery, qQuery, geoQuery,

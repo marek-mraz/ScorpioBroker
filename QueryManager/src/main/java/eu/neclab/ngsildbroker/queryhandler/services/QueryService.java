@@ -1716,8 +1716,24 @@ public class QueryService implements CSourceHandler {
 				List<Uni<Tuple2<Map<String, Object>, QueryRemoteHost>>> unisForEntityMapRetrieval = Lists
 						.newArrayList();
 
+				boolean isRetrieveById = attrsQuery == null && qQuery == null && geoQuery == null
+						&& scopeQuery == null && idsAndTypeQueryAndIdPattern != null
+						&& idsAndTypeQueryAndIdPattern.size() == 1;
+				if (isRetrieveById) {
+					Tuple3<String[], TypeQueryTerm, String> only = idsAndTypeQueryAndIdPattern.get(0);
+					isRetrieveById = only.getItem1() != null && only.getItem1().length == 1
+							&& only.getItem2() == null && only.getItem3() == null;
+				}
+
 				for (QueryRemoteHost remoteHost : remoteHost2Query) {
-					if (remoteHost.canDoEntityMap()) {
+					if (isRetrieveById && remoteHost.isCanDoRetrieve()) {
+						// force the retrieve forward (GET /entities/{id}); skip query/batch/entityMap dispatch
+						remoteHost.setCanDoBatchQuery(false);
+						remoteHost.setCanDoQuery(false);
+						unisForEntityRetrieval.add(EntityTools
+								.getRemoteEntities(remoteHost, webClient, timeout, fedlimit, 0, ldService).onItem()
+								.transform(entities -> Tuple2.of(entities, remoteHost)));
+					} else if (remoteHost.canDoEntityMap()) {
 						List<Tuple3<String, String, String>> idsAndTypesAndIdPattern = remoteHost
 								.getIdsAndTypesAndIdPattern();
 						if (idsAndTypesAndIdPattern == null) {
