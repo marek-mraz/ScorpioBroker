@@ -147,7 +147,12 @@ public class EntityService implements CSourceHandler {
 			}
 		} else {
 			int statusCode = response.statusCode();
-			if (ArrayUtils.contains(successCodes, statusCode)) {
+			// Any 2xx except 207 means the forwarded op succeeded on the Context Source — a distributed
+			// Update/Replace/Merge/Append/Delete legitimately answers 204 where the local op's successCodes
+			// expected 201 (and vice-versa). Counting that as a failure wrongly drove a 207 on a fully
+			// successful distributed op (ETSI D018_02_02/04, batch D012/D015/D016). 207 keeps its own branch.
+			if (ArrayUtils.contains(successCodes, statusCode)
+					|| (statusCode >= 200 && statusCode < 300 && statusCode != 207)) {
 				for (Map<String, Object> entity : remoteEntities) {
 					NGSILDOperationResult tmp = new NGSILDOperationResult(AppConstants.CREATE_REQUEST,
 							entity.get("id") == null ? "no entityId" : (String) entity.get("id"), host.tenant());
@@ -214,7 +219,7 @@ public class EntityService implements CSourceHandler {
 			result.addFailure(new ResponseException(ErrorType.InternalError, failure.getMessage(), host, attribs));
 		} else {
 			int statusCode = response.statusCode();
-			if (successCode == statusCode) {
+			if (successCode == statusCode || (statusCode >= 200 && statusCode < 300 && statusCode != 207)) {
 				result.addSuccess(new CRUDSuccess(host, attribs));
 			} else if (statusCode == 207) {
 				JsonObject jsonObj = response.bodyAsJsonObject();
@@ -1529,7 +1534,18 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(resultLists -> {
 			List<NGSILDOperationResult> result = Lists.newArrayList();
 			resultLists.forEach(resultList -> {
-				result.addAll((List<NGSILDOperationResult>) resultList);
+				// A combined uni result may be a List, any other Collection (e.g. a HashSet from a
+				// forwarded op), a single NGSILDOperationResult, or null (a forward that yielded nothing).
+				// The old blind (List) cast + addAll threw ClassCastException / NPE once distributed
+				// forwarding was in play, turning successful distributed batch ops into 500s.
+				if (resultList == null) {
+					return;
+				}
+				if (resultList instanceof java.util.Collection) {
+					result.addAll((java.util.Collection<NGSILDOperationResult>) resultList);
+				} else if (resultList instanceof NGSILDOperationResult) {
+					result.add((NGSILDOperationResult) resultList);
+				}
 			});
 			return result;
 		});
@@ -1725,7 +1741,18 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(resultLists -> {
 			List<NGSILDOperationResult> result = Lists.newArrayList();
 			resultLists.forEach(resultList -> {
-				result.addAll((List<NGSILDOperationResult>) resultList);
+				// A combined uni result may be a List, any other Collection (e.g. a HashSet from a
+				// forwarded op), a single NGSILDOperationResult, or null (a forward that yielded nothing).
+				// The old blind (List) cast + addAll threw ClassCastException / NPE once distributed
+				// forwarding was in play, turning successful distributed batch ops into 500s.
+				if (resultList == null) {
+					return;
+				}
+				if (resultList instanceof java.util.Collection) {
+					result.addAll((java.util.Collection<NGSILDOperationResult>) resultList);
+				} else if (resultList instanceof NGSILDOperationResult) {
+					result.add((NGSILDOperationResult) resultList);
+				}
 			});
 			return result;
 		});
@@ -1931,7 +1958,18 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(resultLists -> {
 			List<NGSILDOperationResult> result = Lists.newArrayList();
 			resultLists.forEach(resultList -> {
-				result.addAll((List<NGSILDOperationResult>) resultList);
+				// A combined uni result may be a List, any other Collection (e.g. a HashSet from a
+				// forwarded op), a single NGSILDOperationResult, or null (a forward that yielded nothing).
+				// The old blind (List) cast + addAll threw ClassCastException / NPE once distributed
+				// forwarding was in play, turning successful distributed batch ops into 500s.
+				if (resultList == null) {
+					return;
+				}
+				if (resultList instanceof java.util.Collection) {
+					result.addAll((java.util.Collection<NGSILDOperationResult>) resultList);
+				} else if (resultList instanceof NGSILDOperationResult) {
+					result.add((NGSILDOperationResult) resultList);
+				}
 			});
 			return result;
 		});
@@ -2045,7 +2083,18 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(resultLists -> {
 			List<NGSILDOperationResult> result = Lists.newArrayList();
 			resultLists.forEach(resultList -> {
-				result.addAll((List<NGSILDOperationResult>) resultList);
+				// A combined uni result may be a List, any other Collection (e.g. a HashSet from a
+				// forwarded op), a single NGSILDOperationResult, or null (a forward that yielded nothing).
+				// The old blind (List) cast + addAll threw ClassCastException / NPE once distributed
+				// forwarding was in play, turning successful distributed batch ops into 500s.
+				if (resultList == null) {
+					return;
+				}
+				if (resultList instanceof java.util.Collection) {
+					result.addAll((java.util.Collection<NGSILDOperationResult>) resultList);
+				} else if (resultList instanceof NGSILDOperationResult) {
+					result.add((NGSILDOperationResult) resultList);
+				}
 			});
 			return result;
 		});
@@ -2646,7 +2695,18 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(resultLists -> {
 			List<NGSILDOperationResult> result = Lists.newArrayList();
 			resultLists.forEach(resultList -> {
-				result.addAll((List<NGSILDOperationResult>) resultList);
+				// A combined uni result may be a List, any other Collection (e.g. a HashSet from a
+				// forwarded op), a single NGSILDOperationResult, or null (a forward that yielded nothing).
+				// The old blind (List) cast + addAll threw ClassCastException / NPE once distributed
+				// forwarding was in play, turning successful distributed batch ops into 500s.
+				if (resultList == null) {
+					return;
+				}
+				if (resultList instanceof java.util.Collection) {
+					result.addAll((java.util.Collection<NGSILDOperationResult>) resultList);
+				} else if (resultList instanceof NGSILDOperationResult) {
+					result.add((NGSILDOperationResult) resultList);
+				}
 			});
 			return result;
 		});

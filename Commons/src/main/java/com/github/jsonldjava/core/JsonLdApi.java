@@ -273,8 +273,11 @@ public class JsonLdApi {
 					// 7.1.2)
 					else {
 						final List<String> types = new ArrayList<String>();
-						// 7.1.2.2)
-						for (final String expandedType : (List<String>) expandedValue) {
+						// 7.1.2.2) @type's expanded value is iterated as a Collection (not strictly a List):
+						// the federated batch result path can hand us a Set of types, and a bare (List) cast
+						// threw ClassCastException there, turning successful distributed create/update/merge
+						// batch ops into 500s. A List is a Collection too, so non-federated paths are unchanged.
+						for (final String expandedType : (Collection<String>) expandedValue) {
 							types.add(activeCtx.compactIri(expandedType, true));
 						}
 						// 7.1.2.3)

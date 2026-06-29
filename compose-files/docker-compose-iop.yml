@@ -48,7 +48,8 @@ x-scorpio-tmpl: &scorpio-tmpl
 
 services:
   # ==============================
-  # BROKER 1 (self-contained: own postgres + kafka + mqtt, mirroring brokers 2..5)
+  # BROKER 1 (own postgres + kafka; ONE shared emqx 'mqtt' for ALL brokers — only the 058 MQTT suite
+  # uses it, and only against broker1. Dev/federation need no MQTT; brokers never depends_on it.)
   # ==============================
   postgres: { <<: *postgres-tmpl, container_name: scorpio-postgres-1 }
   mqtt: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-1 }
@@ -77,7 +78,6 @@ services:
   # BROKER 2
   # ==============================
   postgres2: { <<: *postgres-tmpl, container_name: scorpio-postgres-2 }
-  mqtt2: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-2 }
   kafka2:
     <<: *kafka-tmpl
     container_name: scorpio-kafka-2
@@ -91,7 +91,7 @@ services:
     environment:
       DBHOST: postgres2
       BUSHOST: kafka2
-      MQTT_HOST: mqtt2
+      MQTT_HOST: mqtt
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9082"
       GATEWAY: "http://scorpio2:9090"
       SCORPIO_STARTUPDELAY: 15s
@@ -101,7 +101,6 @@ services:
   # BROKER 3
   # ==============================
   postgres3: { <<: *postgres-tmpl, container_name: scorpio-postgres-3 }
-  mqtt3: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-3 }
   kafka3:
     <<: *kafka-tmpl
     container_name: scorpio-kafka-3
@@ -115,7 +114,7 @@ services:
     environment:
       DBHOST: postgres3
       BUSHOST: kafka3
-      MQTT_HOST: mqtt3
+      MQTT_HOST: mqtt
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9083"
       GATEWAY: "http://scorpio3:9090"
       SCORPIO_STARTUPDELAY: 15s
@@ -125,7 +124,6 @@ services:
   # BROKER 4
   # ==============================
   postgres4: { <<: *postgres-tmpl, container_name: scorpio-postgres-4 }
-  mqtt4: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-4 }
   kafka4:
     <<: *kafka-tmpl
     container_name: scorpio-kafka-4
@@ -139,7 +137,7 @@ services:
     environment:
       DBHOST: postgres4
       BUSHOST: kafka4
-      MQTT_HOST: mqtt4
+      MQTT_HOST: mqtt
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9084"
       GATEWAY: "http://scorpio4:9090"
       SCORPIO_STARTUPDELAY: 15s
@@ -149,7 +147,6 @@ services:
   # BROKER 5
   # ==============================
   postgres5: { <<: *postgres-tmpl, container_name: scorpio-postgres-5 }
-  mqtt5: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-5 }
   kafka5:
     <<: *kafka-tmpl
     container_name: scorpio-kafka-5
@@ -163,7 +160,7 @@ services:
     environment:
       DBHOST: postgres5
       BUSHOST: kafka5
-      MQTT_HOST: mqtt5
+      MQTT_HOST: mqtt
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9085"
       GATEWAY: "http://scorpio5:9090"
       SCORPIO_STARTUPDELAY: 15s
