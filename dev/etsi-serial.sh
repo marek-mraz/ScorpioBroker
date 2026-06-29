@@ -28,18 +28,24 @@ B3="${B3:-http://scorpio3:9090/ngsi-ld/v1}"
 B4="${B4:-http://scorpio4:9090/ngsi-ld/v1}"
 B5="${B5:-http://scorpio5:9090/ngsi-ld/v1}"
 SUITE="${SUITE:-ngsi-ld-test-suite}"
+
+# 1. Bring up the single stack (build scorpio-local:latest from source + 5 brokers + health).
+#    This ALSO attaches THIS container to iop_scorpio-net (run-iop.sh ~L41), which is why the
+#    CALLBACK_HOST detection below runs AFTER it (see note).
+[ "${SKIP_UP:-}" = 1 ] || ./dev/run-iop.sh
+
 # Default callback host = this container's IP on the stack network, so the brokers can reach the
-# suite's notification/context mock servers. (This container has >1 network, so its hostname may
-# resolve to the wrong interface — use the stack-network IP explicitly.) CI overrides this with
-# CALLBACK_HOST=host.docker.internal.
+# suite's notification/context mock servers. (This container has >1 network and its hostname resolves
+# to MULTIPLE IPs — the mock HTTP server binds to the FIRST /etc/hosts entry (bridge) which the brokers
+# are NOT on, so they get "connection refused" on every notification. Use the single iop_scorpio-net IP
+# explicitly so the server binds to it and the brokers reach it on the shared network.) MUST run AFTER
+# run-iop.sh, because that's what attaches this container to iop_scorpio-net — earlier the inspect is
+# empty and falls back to the broken multi-IP hostname. CI overrides this with host.docker.internal.
 if [ -z "${CALLBACK_HOST:-}" ]; then
   CALLBACK_HOST=$(docker inspect -f '{{(index .NetworkSettings.Networks "iop_scorpio-net").IPAddress}}' \
     "$(hostname)" 2>/dev/null)
   CALLBACK_HOST="${CALLBACK_HOST:-$(hostname)}"
 fi
-
-# 1. Bring up the single stack (build scorpio-local:latest from source + 5 brokers + health).
-[ "${SKIP_UP:-}" = 1 ] || ./dev/run-iop.sh
 
 # 2. Point the suite at broker1 and at the callback host; @context URLs stay https.
 ( cd "$SUITE/resources"
