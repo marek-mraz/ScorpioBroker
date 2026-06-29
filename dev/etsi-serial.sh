@@ -61,6 +61,8 @@ fi
 #    across suites (which was inflating Subscription/ContextSource failures). The IOP suite resets all
 #    five brokers itself via libraries/FederationReset.py.
 RESET_BROKER="$(pwd)/dev/reset-broker.sh"   # absolute path; the loop below runs from inside $SUITE
+REPO="$(pwd)"                               # repo root, captured before the cd into $SUITE
+COMPOSE="$REPO/compose-files/docker-compose-iop.yml"
 cd "$SUITE"
 [ -d .venv ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
 ROBOT=.venv/bin/robot
@@ -90,10 +92,28 @@ stop_if_failed() {  # $1=robot exit code  $2=suite label  $3=results dir
   echo "  inspect: $SUITE/$3/log.html   failures: $SUITE/etsi-failures.md"
   exit 1
 }
-reset_state() {  # between-suite reset: API deletes (evict broker in-VM caches, no restart) + clean_db
-                 # (truncate DB incl. temporal). Paired so neither in-VM nor temporal state leaks.
+restart_broker() {  # force-recreate scorpio1 -> guaranteed-empty in-VM state. The API reset + clean_db
+                    # demonstrably do NOT fully clear a full sequential run (entities leaked into
+                    # Consumption: query expecting 3 returned 38; cross-suite Buildings in temporal
+                    # queries). Scorpio loads its subscription/registration maps + federation/EntityMap
+                    # caches from the DB at STARTUP, so this MUST run AFTER clean_db (truncate first,
+                    # then rebuild caches from an empty DB) — restarting on a populated DB just reloads
+                    # the leak. Postgres data persists across the recreate; clean_db is what empties it.
+                    # Set NO_RESTART=1 to skip (faster, pre-fix behaviour). ~15-25s/suite.
+  [ "${NO_RESTART:-}" = 1 ] && return 0
+  docker compose -p iop -f "$COMPOSE" up -d --no-deps --force-recreate scorpio1 >/dev/null 2>&1 || true
+  for _ in $(seq 1 40); do
+    [ "$(docker exec scorpio-broker-1 sh -c 'curl -s -o /dev/null -w "%{http_code}" http://localhost:9090/q/health 2>/dev/null' 2>/dev/null)" = 200 ] && return 0
+    sleep 2
+  done
+  echo ">>> WARN: scorpio1 did not report healthy within ~80s after restart" >&2
+}
+reset_state() {  # between-suite reset: API deletes (evict caches) + clean_db (truncate DB incl temporal)
+                 # + force-recreate scorpio1 (the bulletproof in-VM clear). Order matters: DB is emptied
+                 # BEFORE the restart so caches rebuild empty. Together = a true clean slate, no leak.
   [ -x "$RESET_BROKER" ] && "$RESET_BROKER" "$B1" >/dev/null 2>&1 || true
   ./clean_db.sh >/dev/null 2>&1 || true
+  restart_broker
 }
 
 rm -rf results && mkdir -p results

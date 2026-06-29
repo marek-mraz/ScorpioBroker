@@ -328,9 +328,14 @@ public class EntityService implements CSourceHandler {
 			}
 
 			request.setPayloadFromSingle(entityId, localEntity);
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(partialUpdateLocalEntity(request, entityId, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.PARTIAL_UPDATE_REQUEST,
 						entityId, tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {
@@ -794,9 +799,14 @@ public class EntityService implements CSourceHandler {
 				request.setDistributed(false);
 			}
 			request.setPayloadFromSingle(entityId, localEntity);
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(appendLocal(request, entityId, noOverwrite, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.CREATE_REQUEST, entityId,
 						tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {
@@ -860,9 +870,20 @@ public class EntityService implements CSourceHandler {
 				request.setDistributed(false);
 			}
 			request.setPayloadFromSingle(entityId, localEntity);
+			// In redirect/exclusive mode the matched attributes are owned by the Context Source and
+			// stripped from the local payload (splitEntity), leaving only an {id,type} shell — so the
+			// local update of a never-stored entity legitimately 404s. That miss must not be reported
+			// as a per-source failure (which would wrongly drive a 207); the forwarded op is
+			// authoritative. NGSI-LD 5.6.2 / Table 6.6.3.2-2 (204 when all updates succeed). Mirrors
+			// the deleteEntity guard. regMode: redirect=2, exclusive=3.
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(updateLocalEntity(request, entityId, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.UPDATE_REQUEST, entityId,
 						tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {
@@ -876,6 +897,20 @@ public class EntityService implements CSourceHandler {
 		return Uni.combine().all().unis(unis).with(list -> {
 			return getResult(list);
 		});
+	}
+
+	// True when any matching registration is redirect(2) or exclusive(3): the entity/attribute is
+	// owned by the Context Source and never stored locally, so a local 404 miss on a distributed
+	// update/replace/merge/append is expected and must NOT be reported as a per-source failure
+	// (which would wrongly drive a 207 — or a 404 via the all-404 aggregation — instead of the
+	// 204 the forwarded op earned). NGSI-LD 5.6.x / Table 6.6.3.2-2. Mirrors the deleteEntity guard.
+	private static boolean isOwnedRemotely(Collection<Tuple2<RemoteHost, Map<String, Object>>> remotes) {
+		for (Tuple2<RemoteHost, Map<String, Object>> rh : remotes) {
+			if (rh.getItem1().regMode() > 1) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private NGSILDOperationResult getResult(List<?> list) {
@@ -2173,9 +2208,14 @@ public class EntityService implements CSourceHandler {
 				request.setDistributed(false);
 			}
 			request.setPayloadFromSingle(entityId, localEntity);
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(localMergePatch(request, entityId, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.CREATE_REQUEST, entityId,
 						tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {
@@ -2319,7 +2359,7 @@ public class EntityService implements CSourceHandler {
 					return HttpUtils
 							.connect(webClient,
 									remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/" + entityId,
-									tenant, AppConstants.PATCH_OP, AppConstants.NGB_APPLICATION_JSON, null,
+									tenant, AppConstants.PUT_OP, AppConstants.NGB_APPLICATION_JSON, null,
 									toFrwd, body, viaHeaders,
 									remoteHost.cSourceAlias(), -1)
 							.onItemOrFailure()
@@ -2340,9 +2380,14 @@ public class EntityService implements CSourceHandler {
 			}
 
 			request.setPayloadFromSingle(entityId, localEntity);
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(replaceLocalEntity(request, entityId, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.CREATE_REQUEST, entityId,
 						tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {
@@ -2455,9 +2500,14 @@ public class EntityService implements CSourceHandler {
 				request.setDistributed(false);
 			}
 			request.setPayloadFromSingle(entityId, localEntity);
+			final boolean ignoreLocalMiss = isOwnedRemotely(remoteEntitiesAndHosts);
 			unis.add(replaceLocalAttrib(request, entityId, context).onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.CREATE_REQUEST, entityId,
 						tenant);
+				if (ignoreLocalMiss && e instanceof ResponseException
+						&& ((ResponseException) e).getErrorCode() == 404) {
+					return localResult;
+				}
 				if (e instanceof ResponseException) {
 					localResult.addFailure((ResponseException) e);
 				} else {

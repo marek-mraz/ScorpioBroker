@@ -508,11 +508,13 @@ public final class HttpUtils {
 			return builder.build();
 		}
 		if (updateResult.getSuccesses().isEmpty()) {
+			// No part of the operation succeeded. A single not-found (no local entity and no matching
+			// registration handled it) is a plain 404 ResourceNotFound (NGSI-LD 5.6.2); multiple
+			// failures fall through to a 207 multi-status.
 			if (updateResult.getFailures().size() == 1) {
 				ResponseException failure = updateResult.getFailures().get(0);
 				return handleControllerExceptions(failure, updateResult.getTenant());
 			}
-		} else {
 			boolean only404 = true;
 			for (ResponseException failure : updateResult.getFailures()) {
 				if (failure.getErrorCode() != 404) {
@@ -520,7 +522,7 @@ public final class HttpUtils {
 					break;
 				}
 			}
-			if (only404) {
+			if (only404 && !updateResult.getFailures().isEmpty()) {
 				ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(404);
 				if (!updateResult.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
 					builder = builder.header(NGSIConstants.TENANT_HEADER, updateResult.getTenant());
@@ -528,6 +530,10 @@ public final class HttpUtils {
 				return builder.build();
 			}
 		}
+		// Mixed outcome: at least one part succeeded and at least one failed (e.g. an inclusive
+		// registration forwarded the update successfully while the entity was absent locally -> the
+		// local 404 is a partial failure). NGSI-LD Table 6.6.3.2-2: this is a 207 Multi-Status, NOT a
+		// 404 — a not-found only stands alone when nothing succeeded.
 		ResponseBuilder<Object> builder = new RestResponseBuilderImpl<Object>().status(207)
 				.entity(new JsonObject(updateResult.getJson()));
 		if (!updateResult.getTenant().equals(AppConstants.INTERNAL_NULL_KEY)) {
@@ -1663,7 +1669,13 @@ public final class HttpUtils {
 					failure.getMessage(), remoteHost, attrs));
 		} else {
 			int statusCode = response.statusCode();
-			if (ArrayUtils.contains(integers, statusCode)) {
+			// A forwarded distributed op that returns ANY 2xx (except 207) succeeded on the Context
+			// Source — Context Sources legitimately answer 204 (e.g. Update Attributes, NGSI-LD
+			// 6.6.3.2) where the broker only listed 201 as "expected". Treating that mismatch as an
+			// UnexpectedResult failure wrongly drove a 207 on a fully successful distributed op
+			// (ETSI D004/D007/D008/D009 redirect/exclusive). 207 keeps its own branch below.
+			if (ArrayUtils.contains(integers, statusCode)
+					|| (statusCode >= 200 && statusCode < 300 && statusCode != 207)) {
 				result.addSuccess(new CRUDSuccess(remoteHost, attrs));
 			} else if (statusCode == 207) {
 				JsonObject jsonObj = response.bodyAsJsonObject();
