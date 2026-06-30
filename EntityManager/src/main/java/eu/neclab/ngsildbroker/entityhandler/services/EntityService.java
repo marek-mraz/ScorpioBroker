@@ -2719,7 +2719,11 @@ public class EntityService implements CSourceHandler {
 						return HttpUtils
 								.connect(webClient,
 										remoteHost.host() + NGSIConstants.ENDPOINT_BATCH_MERGE,
-										tenant, AppConstants.PATCH_OP, AppConstants.NGB_APPLICATION_JSON, null,
+										// NGSI-LD 6.31.3.1: Batch Entity Merge is bound to POST
+										// /entityOperations/merge (like all batch ops), NOT PATCH. Forwarding
+										// it as PATCH hit no Context Source stub -> "Connection was closed" ->
+										// recorded as a partial failure -> wrong 207 (want 204). D016_*.
+										tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
 										toFrwd, body, viaHeaders,
 										remoteHost.cSourceAlias(), -1)
 								.onItemOrFailure()
