@@ -1513,9 +1513,26 @@ public final class HttpUtils {
 			response = HttpUtils.handleControllerExceptions(fails.get(0), operationResult.getTenant());
 		} else {
 			try {
+				// NGSI-LD 6.4.3.1: a partially-failed distributed Create Entity returns a 207 Multi-Status
+				// with a BatchOperationResult { success: [ids], errors: [ { ..., error: ProblemDetails } ] }.
+				// One errors entry PER failure (e.g. local AlreadyExists + a remote 409 from a Context Source
+				// -> two entries, D001_03_02_inc). The internal getJson() uses a "failure" array; reshape each
+				// failure to the spec's "errors[].error".
+				Map<String, Object> body = new HashMap<>();
+				List<Map<String, Object>> errs = new ArrayList<>();
+				for (ResponseException fail : fails) {
+					Map<String, Object> errEntry = new HashMap<>();
+					errEntry.put(NGSIConstants.ENTITY_ID, operationResult.getEntityId());
+					errEntry.put("error", fail.getJson());
+					errs.add(errEntry);
+				}
+				if (!successes.isEmpty()) {
+					body.put("success", Lists.newArrayList(operationResult.getEntityId()));
+				}
+				body.put("errors", errs);
 				response = new RestResponseBuilderImpl<Object>().status(207).type(AppConstants.NGB_APPLICATION_JSON)
 						.header(jakarta.ws.rs.core.HttpHeaders.LOCATION, baseUrl + operationResult.getEntityId())
-						.entity(JsonUtils.toPrettyString(operationResult.getJson())).build();
+						.entity(JsonUtils.toPrettyString(body)).build();
 			} catch (Exception e) {
 				response = HttpUtils.handleControllerExceptions(e, operationResult.getTenant());
 			}

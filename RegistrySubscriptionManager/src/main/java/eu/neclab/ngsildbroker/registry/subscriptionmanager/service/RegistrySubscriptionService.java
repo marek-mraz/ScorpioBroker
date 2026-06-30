@@ -561,8 +561,15 @@ public class RegistrySubscriptionService implements CSourceHandler {
 														.postAbs(notificationParam.getEndPoint().getUri().toString())
 														.putHeaders(SubscriptionTools.getHeaders(notificationParam,
 																potentialSub.getSubscription().getOtherHead()))
-														.sendJsonObject(new JsonObject(noti)).onFailure().retry()
-														.atMost(3)
+														// ponytail: no .onFailure().retry() — a POST whose response is
+														// lost (connection dropped after the body reached the receiver)
+														// gets re-sent, so the receiver records the SAME
+														// cSourceNotification twice (identical notifiedAt). That
+														// duplicate initial "newlyMatching" then masks the later
+														// "updated" notification (ETSI 047_02). Notifications are
+														// best-effort: the terminal onFailure below records
+														// lastFailedNotification (5.11.7) — at-most-once delivery.
+														.sendJsonObject(new JsonObject(noti))
 														.onItem().transformToUni(result -> {
 															int statusCode = result.statusCode();
 															long now = System.currentTimeMillis();

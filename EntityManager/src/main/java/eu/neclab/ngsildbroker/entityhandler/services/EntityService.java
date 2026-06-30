@@ -37,6 +37,11 @@ import eu.neclab.ngsildbroker.commons.constants.NGSIConstants;
 import eu.neclab.ngsildbroker.commons.datatypes.RegistrationEntry;
 import eu.neclab.ngsildbroker.commons.datatypes.RemoteHost;
 import eu.neclab.ngsildbroker.commons.datatypes.ViaHeaders;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.AttrsQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.GeoQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.QQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.ScopeQueryTerm;
+import eu.neclab.ngsildbroker.commons.datatypes.terms.TypeQueryTerm;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.AppendEntityRequest;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.BaseRequest;
 import eu.neclab.ngsildbroker.commons.datatypes.requests.BatchRequest;
@@ -59,6 +64,7 @@ import eu.neclab.ngsildbroker.commons.interfaces.CSourceHandler;
 import eu.neclab.ngsildbroker.commons.tools.EntityTools;
 import eu.neclab.ngsildbroker.commons.tools.HttpUtils;
 import eu.neclab.ngsildbroker.commons.tools.MicroServiceUtils;
+import eu.neclab.ngsildbroker.commons.tools.QueryParser;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.tuples.Tuple2;
@@ -579,13 +585,26 @@ public class EntityService implements CSourceHandler {
 	// selector is id-only, which the list-query endpoint rejects, so retrieve each id directly.
 	public Uni<Void> purgeEntities(String tenant, String cleanedQuery, String idParam, boolean useListQuery,
 			String keep, String drop, boolean localOnly, Context context, io.vertx.core.MultiMap headersFromReq,
-			ViaHeaders viaHeaders) {
+			ViaHeaders viaHeaders, io.vertx.core.MultiMap params) {
 		final boolean dropMode = drop != null && !drop.isEmpty();
 		final Set<String> dropSet = dropMode ? new HashSet<>(Arrays.asList(drop.split(","))) : Set.of();
 		final boolean keepMode = keep != null && !keep.isEmpty();
 		final Set<String> keepSet = keepMode ? new HashSet<>(Arrays.asList(keep.split(","))) : Set.of();
 		String link = headersFromReq.get("Link");
 		String tenantH = headersFromReq.get(NGSIConstants.TENANT_HEADER);
+
+		// NGSI-LD 5.6.21: unless local scope is specified, forward the purge (DELETE /entities?{query})
+		// to every matching inclusive/exclusive/redirect Context Source that supports purgeEntity. The
+		// forwarded query carries the same filter (+ keep/drop) so the remote source purges its own data.
+		String forwardQuery = cleanedQuery == null ? "" : cleanedQuery;
+		if (keepMode) {
+			forwardQuery = forwardQuery.isEmpty() ? "keep=" + keep : forwardQuery + "&keep=" + keep;
+		}
+		if (dropMode) {
+			forwardQuery = forwardQuery.isEmpty() ? "drop=" + drop : forwardQuery + "&drop=" + drop;
+		}
+		List<Uni<NGSILDOperationResult>> forwardUnis = localOnly ? new ArrayList<>()
+				: getPurgeForwardUnis(tenant, forwardQuery, params, idParam, context, headersFromReq, viaHeaders);
 
 		Uni<List<JsonObject>> matchesUni;
 		if (useListQuery) {
@@ -627,17 +646,16 @@ public class EntityService implements CSourceHandler {
 		}
 
 		return matchesUni.onItem().transformToUni(entities -> {
-			if (entities.isEmpty()) {
-				return Uni.createFrom().voidItem();
-			}
-			List<Uni<NGSILDOperationResult>> unis = new ArrayList<>();
+			// Fire the remote purge forwards (independent of any local matches), then delete/strip the
+			// LOCAL matches only — the remote side is already handled by the forwarded purge query.
+			List<Uni<NGSILDOperationResult>> unis = new ArrayList<>(forwardUnis);
 			for (JsonObject entity : entities) {
 				String id = entity.getString("id");
 				if (id == null) {
 					continue;
 				}
 				if (!dropMode && !keepMode) {
-					unis.add(deleteEntity(tenant, id, context, headersFromReq, viaHeaders, localOnly));
+					unis.add(deleteEntity(tenant, id, context, headersFromReq, viaHeaders, true));
 				} else if (dropMode) {
 					for (String attr : dropSet) {
 						unis.add(deleteAttribute(tenant, id, context.expandIri(attr.trim(), false, true, null, null),
@@ -659,6 +677,64 @@ public class EntityService implements CSourceHandler {
 			}
 			return Uni.combine().all().unis(unis).with(list -> (Void) null);
 		});
+	}
+
+	// NGSI-LD 5.6.21 / Table 4.20-2: forward the purge (DELETE /entities?{query}) to every matching
+	// inclusive/exclusive/redirect Context Source Registration that supports purgeEntity. purgeEntity is
+	// granted only by the redirectionOps group, which always co-grants deleteEntity; Scorpio persists no
+	// separate purge flag, so a proxying (regMode>=1) registration that supports distributed delete is
+	// treated as supporting purgeEntity. Auxiliary (regMode 0) registrations are never forwarded to.
+	private List<Uni<NGSILDOperationResult>> getPurgeForwardUnis(String tenant, String forwardQuery,
+			io.vertx.core.MultiMap params, String idParam, Context context, io.vertx.core.MultiMap headersFromReq,
+			ViaHeaders viaHeaders) {
+		List<Uni<NGSILDOperationResult>> unis = new ArrayList<>();
+		TypeQueryTerm typeQuery;
+		AttrsQueryTerm attrsQuery;
+		QQueryTerm qQuery;
+		GeoQueryTerm geoQuery;
+		ScopeQueryTerm scopeQuery;
+		try {
+			typeQuery = QueryParser.parseTypeQuery(params.get("type"), context);
+			attrsQuery = QueryParser.parseAttrs(params.get("attrs"), context);
+			qQuery = QueryParser.parseQuery(params.get("q"), context);
+			geoQuery = QueryParser.parseGeoQuery(params.get("georel"), params.get("coordinates"),
+					params.get("geometry"), params.get("geoproperty"), context);
+			scopeQuery = QueryParser.parseScopeQuery(params.get("scopeQ"));
+		} catch (ResponseException e) {
+			logger.warn("Failed to parse purge query for forwarding: " + e.getMessage());
+			return unis;
+		}
+		String[] idArr = idParam == null ? null : idParam.split(",");
+		String idPattern = params.get("idPattern");
+		Set<String> seen = new HashSet<>();
+		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(tenant).values()) {
+			for (RegistrationEntry regEntry : regEntries) {
+				if (regEntry.regMode() < 1 || !regEntry.deleteEntity()) {
+					continue;
+				}
+				if (regEntry.matches(idArr, idPattern, typeQuery, attrsQuery, qQuery, geoQuery, scopeQuery) == null) {
+					continue;
+				}
+				RemoteHost host = regEntry.host();
+				// One registration expands into multiple RegistrationEntry rows (per attr/type); de-dup
+				// the forward per Context Source endpoint so each source is purged exactly once.
+				if (!seen.add(host.cSourceId() + " " + host.host())) {
+					continue;
+				}
+				String url = host.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT
+						+ (forwardQuery == null || forwardQuery.isEmpty() ? "" : "?" + forwardQuery);
+				MultiMap toFrwd = HttpUtils.getHeadToFrwd(host.headers(), headersFromReq);
+				RemoteHost rh = new RemoteHost(host.host(), host.tenant(), host.headers(), host.cSourceId(),
+						regEntry.deleteEntity(), regEntry.deleteBatch(), regEntry.regMode(), false,
+						regEntry.queryEntityMap(), host.cSourceAlias());
+				unis.add(HttpUtils
+						.connect(webClient, url, tenant, AppConstants.DELETE_OP, null, null, toFrwd, null, viaHeaders,
+								host.cSourceAlias(), -1)
+						.onItemOrFailure().transform((response, failure) -> HttpUtils.handleWebResponse(response, failure,
+								ArrayUtils.toArray(204), rh, AppConstants.DELETE_REQUEST, "purge", new HashSet<Attrib>())));
+			}
+		}
+		return unis;
 	}
 
 	// Self-call GET as compact application/json, forwarding tenant + @context Link so matching and
@@ -1025,7 +1101,16 @@ public class EntityService implements CSourceHandler {
 				}));
 			}
 		}
-		if (localEntity != null && !localEntity.isEmpty()) {
+		// NGSI-LD 5.6.1: when all input attributes were forwarded to Context Source(s)
+		// (exclusive/redirect) and only the id/type/scope shell remains, do NOT create the entity
+		// locally — that would raise a spurious AlreadyExists (-> 207 instead of 201) when the entity
+		// already exists locally (D001_01_exc), and redirect/exclusive registrations hold no data
+		// locally anyway. Only skip when a real forward happened (remotes non-empty), so a pure-local
+		// minimal create still stores its shell (avoids the "Uni set is empty" 500).
+		boolean localHasRealAttrs = localEntity != null
+				&& localEntity.keySet().stream().anyMatch(k -> !NGSIConstants.ENTITY_BASE_PROPS.contains(k));
+		boolean skipEmptyLocalShell = !remoteEntitiesAndHosts.isEmpty() && !localHasRealAttrs;
+		if (localEntity != null && !localEntity.isEmpty() && !skipEmptyLocalShell) {
 			if (!unis.isEmpty() && isDifferentRemoteQueryAvailable(request, remoteEntitiesAndHosts, entityId)) {
 				request.setDistributed(true);
 			} else {

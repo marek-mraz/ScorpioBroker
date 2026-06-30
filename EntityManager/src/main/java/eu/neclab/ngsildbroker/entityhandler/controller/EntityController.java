@@ -550,7 +550,7 @@ public class EntityController {// implements EntityHandlerInterface {
 		return ldService.parse(HttpUtils.getAtContext(request)).onItem().transformToUni(context -> {
 			return entityService
 					.purgeEntities(tenant, cleanedQuery, idParam, useListQuery, keep, drop, localOnly, context,
-							request.headers(), viaHeaders)
+							request.headers(), viaHeaders, params)
 					.onItem().transform(v -> RestResponse.noContent());
 		}).onFailure().recoverWithItem(e -> {
 			return HttpUtils.handleControllerExceptions(e, tenant);

@@ -636,7 +636,7 @@ public class RegistrationEntry {
 		if (id != null && this.eId != null && !id.equals(eId)) {
 			return null;
 		}
-		if (this.eIdp != null && !id.matches(eIdp)) {
+		if (this.eIdp != null && (id == null || !idMatchesPattern(id, eIdp))) {
 			return null;
 		}
 		if (prop != null && (eRel != null || eProp != null && !prop.equals(eProp))) {
@@ -664,6 +664,15 @@ public class RegistrationEntry {
 		}
 
 		return Tuple2.of(resultType, resultScopes);
+	}
+
+	// NGSI-LD Table 6.4.3.2 / 5.12: idPattern is "a regular expression that shall be matched by entity
+	// ids" — a partial (find) match, NOT Java's String#matches anchored full match. ETSI registers
+	// idPattern "urn:ngsi-ld:Vehicle:*"; "urn:ngsi-ld:Vehicle:V1".matches(...) is false (the bare * binds
+	// the preceding ':'), find() is true. Scoped to the WRITE-distribution matcher; the query/subscription
+	// overloads keep their existing semantics.
+	private static boolean idMatchesPattern(String id, String pattern) {
+		return java.util.regex.Pattern.compile(pattern).matcher(id).find();
 	}
 
 	private Set<String> getOverlap(List<Map<String, String>> originalScopes) {
