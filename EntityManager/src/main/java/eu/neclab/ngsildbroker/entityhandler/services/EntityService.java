@@ -475,7 +475,7 @@ public class EntityService implements CSourceHandler {
 			for (RegistrationEntry regEntry : regEntries) {
 				boolean matches = ((regEntry.eId() == null && regEntry.eIdp() == null)
 						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp())))
+						|| (regEntry.eIdp() != null && RegistrationEntry.idMatchesPattern(entityId, regEntry.eIdp())))
 						&& ((regEntry.eProp() == null && regEntry.eRel() == null)
 								|| (regEntry.eProp() != null && regEntry.eProp().equals(request.getAttribName()))
 								|| (regEntry.eRel() != null && regEntry.eRel().equals(request.getAttribName())));
@@ -781,7 +781,7 @@ public class EntityService implements CSourceHandler {
 			for (RegistrationEntry regEntry : regEntries) {
 				boolean matches = (regEntry.eId() == null && regEntry.eIdp() == null)
 						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()));
+						|| (regEntry.eIdp() != null && RegistrationEntry.idMatchesPattern(entityId, regEntry.eIdp()));
 				if (!matches) {
 					continue;
 				}
@@ -1782,6 +1782,19 @@ public class EntityService implements CSourceHandler {
 			}
 		}
 		if (!localEntities.isEmpty()) {
+			// NGSI-LD 5.6.9 / 5.6.1.4: entities whose attributes were forwarded to a redirect/exclusive CSR
+			// (regMode > 1) are not held locally; a local NOT_FOUND miss is expected, not an error.
+			Set<String> remotelyOwned = Sets.newHashSet();
+			for (Entry<RemoteHost, List<Tuple2<Context, Map<String, Object>>>> e : remoteHost2Batch.entrySet()) {
+				if (e.getKey().regMode() > 1) {
+					for (Tuple2<Context, Map<String, Object>> tc : e.getValue()) {
+						Object eid = tc.getItem2().get(NGSIConstants.JSON_LD_ID);
+						if (eid != null) {
+							remotelyOwned.add((String) eid);
+						}
+					}
+				}
+			}
 			BatchRequest request = new BatchRequest(tenant, localEntities.keySet(), localEntities,
 					AppConstants.BATCH_UPDATE_REQUEST, zip);
 			request.setNoOverwrite(noOverWrite);
@@ -1830,6 +1843,11 @@ public class EntityService implements CSourceHandler {
 								String entityId = entry.getKey();
 								String sqlstate = entry.getValue();
 								request.getPayload().remove(entityId);
+								// 5.6.9: a redirect/exclusive CSR owns this entity; the local miss is expected,
+								// not a failure — skip it so the op can still resolve to 204.
+								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND) && remotelyOwned.contains(entityId)) {
+									return;
+								}
 								NGSILDOperationResult opResult = new NGSILDOperationResult(AppConstants.APPEND_REQUEST,
 										entityId, tenant);
 								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND)) {
@@ -2157,6 +2175,15 @@ public class EntityService implements CSourceHandler {
 			}
 		}
 
+		// NGSI-LD 5.6.10 / 5.6.1.4: ids owned by a redirect/exclusive CSR (regMode > 1) are deleted on the
+		// Context Source; the local delete then finds nothing, and that NOT_FOUND miss must not be recorded
+		// as an error (it would force a wrong 207 instead of 204).
+		Set<String> remotelyOwned = Sets.newHashSet();
+		for (Entry<RemoteHost, List<String>> e : host2Ids.entrySet()) {
+			if (e.getKey().regMode() > 1) {
+				remotelyOwned.addAll(e.getValue());
+			}
+		}
 		Uni<List<NGSILDOperationResult>> local = entityDAO.batchDeleteEntity(tenant, entityIds).onItem()
 				.transformToUni(dbResult -> {
 					List<NGSILDOperationResult> result = Lists.newArrayList();
@@ -2177,6 +2204,11 @@ public class EntityService implements CSourceHandler {
 						fail.entrySet().forEach(entry -> {
 							String entityId = entry.getKey();
 							String sqlstate = entry.getValue();
+							// 5.6.10: a redirect/exclusive CSR owns this entity; the local miss is expected,
+							// not a failure - skip it so the delete can still resolve to 204.
+							if (remotelyOwned.contains(entityId)) {
+								return;
+							}
 							NGSILDOperationResult opResult = new NGSILDOperationResult(AppConstants.DELETE_REQUEST,
 									entityId, tenant);
 							opResult.addFailure(new ResponseException(ErrorType.NotFound, sqlstate));
@@ -2770,6 +2802,20 @@ public class EntityService implements CSourceHandler {
 			}
 		}
 		if (!localEntities.isEmpty()) {
+			// NGSI-LD 5.6.20.4: collect entities whose attributes were forwarded to a redirect/exclusive
+			// CSR (regMode > 1). For those the local merge has nothing to do, so a local NOT_FOUND miss is
+			// expected and must NOT be recorded as an error (it would force a wrong 207 instead of 204).
+			Set<String> remotelyOwned = Sets.newHashSet();
+			for (Entry<RemoteHost, List<Tuple2<Context, Map<String, Object>>>> e : remoteHost2Batch.entrySet()) {
+				if (e.getKey().regMode() > 1) {
+					for (Tuple2<Context, Map<String, Object>> tc : e.getValue()) {
+						Object eid = tc.getItem2().get(NGSIConstants.JSON_LD_ID);
+						if (eid != null) {
+							remotelyOwned.add((String) eid);
+						}
+					}
+				}
+			}
 			BatchRequest request = new BatchRequest(tenant, localEntities.keySet(), localEntities,
 					AppConstants.BATCH_MERGE_REQUEST, zip);
 			request.setNoOverwrite(noOverWrite);
@@ -2802,6 +2848,11 @@ public class EntityService implements CSourceHandler {
 								String entityId = entry.getKey();
 								String sqlstate = entry.getValue();
 								request.getPayload().remove(entityId);
+								// 5.6.20.4: a redirect/exclusive CSR owns this entity; the local miss is
+								// expected, not a failure — skip it so the op can still resolve to 204.
+								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND) && remotelyOwned.contains(entityId)) {
+									return;
+								}
 								NGSILDOperationResult opResult = new NGSILDOperationResult(
 										AppConstants.MERGE_PATCH_REQUEST, entityId, tenant);
 								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND)) {

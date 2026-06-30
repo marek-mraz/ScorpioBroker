@@ -671,7 +671,7 @@ public class RegistrationEntry {
 	// idPattern "urn:ngsi-ld:Vehicle:*"; "urn:ngsi-ld:Vehicle:V1".matches(...) is false (the bare * binds
 	// the preceding ':'), find() is true. Scoped to the WRITE-distribution matcher; the query/subscription
 	// overloads keep their existing semantics.
-	private static boolean idMatchesPattern(String id, String pattern) {
+	public static boolean idMatchesPattern(String id, String pattern) {
 		return java.util.regex.Pattern.compile(pattern).matcher(id).find();
 	}
 
