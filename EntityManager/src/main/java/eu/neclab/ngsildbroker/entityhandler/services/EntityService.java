@@ -139,6 +139,17 @@ public class EntityService implements CSourceHandler {
 		this.microServiceUtils.registerCSourceReceiver(this);
 	}
 
+	private static List<NGSILDOperationResult> markForwardOp(List<NGSILDOperationResult> results, int opType,
+			int statusCode) {
+		for (NGSILDOperationResult r : results) {
+			if (r.getFailures().isEmpty()) {
+				r.setOperationType(opType);
+				r.setWasUpdated(statusCode == 204);
+			}
+		}
+		return results;
+	}
+
 	private List<NGSILDOperationResult> handleBatchResponse(HttpResponse<Buffer> response, Throwable failure,
 			RemoteHost host, List<Map<String, Object>> remoteEntities, Integer[] successCodes) {
 		List<NGSILDOperationResult> result = Lists.newArrayList();
@@ -1740,8 +1751,9 @@ public class EntityService implements CSourceHandler {
 										remoteHost.cSourceAlias(), -1)
 								.onItemOrFailure()
 								.transform((response, failure) -> {
-									return handleBatchResponse(response, failure, remoteHost, toSend,
-											ArrayUtils.toArray(204));
+									return markForwardOp(handleBatchResponse(response, failure, remoteHost, toSend,
+											ArrayUtils.toArray(204)),
+											AppConstants.APPEND_REQUEST, response == null ? 0 : response.statusCode());
 								});
 					}));
 				} else {
@@ -1845,7 +1857,10 @@ public class EntityService implements CSourceHandler {
 								request.getPayload().remove(entityId);
 								// 5.6.9: a redirect/exclusive CSR owns this entity; the local miss is expected,
 								// not a failure — skip it so the op can still resolve to 204.
-								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND) && remotelyOwned.contains(entityId)) {
+								// 5.6.20.4: a redirect/exclusive CSR owns this entity, so its attributes were forwarded
+								// and the local op has nothing to do - ANY local failure for it (NOT_FOUND or
+								// InvalidRequest on the stripped shell) is spurious; skip it.
+								if (remotelyOwned.contains(entityId)) {
 									return;
 								}
 								NGSILDOperationResult opResult = new NGSILDOperationResult(AppConstants.APPEND_REQUEST,
@@ -1926,7 +1941,12 @@ public class EntityService implements CSourceHandler {
 					new UpsertEntityRequest(tenant, entity, zip), entityId);
 			Map<String, Object> local = split.getItem1();
 			Context context = itContext.next();
-			if (local != null) {
+			// 4.3.6.3 / 5.6.8: a redirect/exclusive CSR holds the data. If only the {id,type} shell
+			// remains locally (no unregistered attrs), do NOT upsert it locally - that spurious
+			// shell-create reports wasUpdated=false and wrongly drags the batch result to 201 (D013_red).
+			boolean hasLocalAttrs = local != null
+					&& local.keySet().stream().anyMatch(k -> !NGSIConstants.ENTITY_BASE_PROPS.contains(k));
+			if (hasLocalAttrs) {
 				MicroServiceUtils.putIntoIdMap(localEntities, entityId, local);
 			} else {
 				itContext.remove();
@@ -2031,8 +2051,9 @@ public class EntityService implements CSourceHandler {
 									toFrwd, body, viaHeaders,
 									remoteHost.cSourceAlias(), -1)
 							.onItemOrFailure().transform((response, failure) -> {
-								return handleBatchResponse(response, failure, remoteHost, toSend,
-										ArrayUtils.toArray(204));
+								return markForwardOp(handleBatchResponse(response, failure, remoteHost, toSend,
+										ArrayUtils.toArray(204)),
+										AppConstants.UPSERT_REQUEST, response == null ? 0 : response.statusCode());
 							});
 				}));
 			} else {
@@ -2760,8 +2781,9 @@ public class EntityService implements CSourceHandler {
 										remoteHost.cSourceAlias(), -1)
 								.onItemOrFailure()
 								.transform((response, failure) -> {
-									return handleBatchResponse(response, failure, remoteHost, toSend,
-											ArrayUtils.toArray(204));
+									return markForwardOp(handleBatchResponse(response, failure, remoteHost, toSend,
+											ArrayUtils.toArray(204)),
+											AppConstants.MERGE_PATCH_REQUEST, response == null ? 0 : response.statusCode());
 								});
 					}));
 				} else {
@@ -2850,7 +2872,10 @@ public class EntityService implements CSourceHandler {
 								request.getPayload().remove(entityId);
 								// 5.6.20.4: a redirect/exclusive CSR owns this entity; the local miss is
 								// expected, not a failure — skip it so the op can still resolve to 204.
-								if (sqlstate.equals(AppConstants.SQL_NOT_FOUND) && remotelyOwned.contains(entityId)) {
+								// 5.6.20.4: a redirect/exclusive CSR owns this entity, so its attributes were forwarded
+								// and the local op has nothing to do - ANY local failure for it (NOT_FOUND or
+								// InvalidRequest on the stripped shell) is spurious; skip it.
+								if (remotelyOwned.contains(entityId)) {
 									return;
 								}
 								NGSILDOperationResult opResult = new NGSILDOperationResult(

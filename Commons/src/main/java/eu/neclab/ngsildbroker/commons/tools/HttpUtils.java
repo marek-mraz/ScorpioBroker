@@ -1265,6 +1265,12 @@ public final class HttpUtils {
 		boolean wasUpdated = true;
 		boolean allConflict = true;
 		boolean sameError = true;
+		// An empty result list means every entity was owned by a redirect/exclusive Context Source and
+		// handled remotely with no local op and no error to report -> 204 (the t.get(0) below would
+		// otherwise throw IndexOutOfBounds -> 500). NGSI-LD 5.6.x: nothing failed.
+		if (t.isEmpty()) {
+			return RestResponse.status(RestResponse.Status.NO_CONTENT);
+		}
 		String opType = t.get(0).getOperationType();
 		int lastErrorCode = -1;
 		List<String> createdIds = new ArrayList<>();

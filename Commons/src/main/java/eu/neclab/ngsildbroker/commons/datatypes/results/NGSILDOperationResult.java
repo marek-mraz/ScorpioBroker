@@ -211,6 +211,10 @@ public class NGSILDOperationResult {
 		this.wasUpdated = wasUpdated;
 	}
 
+	public void setOperationType(int operationType) {
+		this.operationType = operationType;
+	}
+
 	public String getTenant() {
 		return tenant;
 	}
