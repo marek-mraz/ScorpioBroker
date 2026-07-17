@@ -1712,6 +1712,11 @@ public final class HttpUtils {
 					}
 					result.getFailures().addAll(remoteResult.getFailures());
 					result.getSuccesses().addAll(remoteResult.getSuccesses());
+				} else {
+					// 6.6.3.2: a 207 MUST carry an UpdateResult body — 207 never means full success.
+					// Swallowing a body-less 207 made the aggregate collapse to 204 (ETSI D003_02_red).
+					result.addFailure(new ResponseException(207, NGSIConstants.ERROR_UNEXPECTED_RESULT,
+							NGSIConstants.ERROR_UNEXPECTED_RESULT_NULL_TITLE, 207, remoteHost, attrs));
 				}
 
 			} else {

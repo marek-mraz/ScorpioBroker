@@ -48,9 +48,18 @@ jobs:
           # serially — exactly what `dev/etsi-serial.sh` does locally, so results match.
           ./dev/etsi-serial.sh || true
 
-      - name: Print Scorpio logs on failure
-        if: failure()
-        run: docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
+      - name: Publish failure report to the job summary
+        if: always()
+        run: |
+          # etsi-serial.sh always writes etsi-failures.md (rebot-merged, failures only).
+          # The job stays green by design (|| true above) — this makes errors visible on the
+          # run page instead of only inside the artifact zip.
+          if [ -s ngsi-ld-test-suite/etsi-failures.md ]; then
+            cat ngsi-ld-test-suite/etsi-failures.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No etsi-failures.md produced — the suite likely did not run; check the logs." >> "$GITHUB_STEP_SUMMARY"
+            docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
+          fi
 
       - name: Tear the stack down
         if: always()

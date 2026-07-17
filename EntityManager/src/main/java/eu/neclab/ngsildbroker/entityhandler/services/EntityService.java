@@ -853,7 +853,10 @@ public class EntityService implements CSourceHandler {
 									.connect(webClient,
 											remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/"
 													+ entityId + "/attrs/",
-											tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
+											tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON,
+											// 5.6.3.4/6.6.3.1: forward the request incl. options=noOverwrite
+											noOverwrite ? Map.of(NGSIConstants.QUERY_PARAMETER_OPTIONS,
+													NGSIConstants.NO_OVERWRITE_OPTION) : null,
 											toFrwd, body, viaHeaders,
 											remoteHost.cSourceAlias(), -1)
 									.onItemOrFailure()
