@@ -598,7 +598,8 @@ public class HistoryEntityService implements CSourceHandler {
 				Iterator<RegistrationEntry> it = regs.iterator();
 				while (it.hasNext()) {
 					RegistrationEntry regEntry = it.next();
-					if (regEntry.expiresAt() > System.currentTimeMillis()) {
+					// expired = has an expiry (>0) that is in the past; the old "> now" removed VALID regs
+					if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
 						it.remove();
 						continue;
 					}

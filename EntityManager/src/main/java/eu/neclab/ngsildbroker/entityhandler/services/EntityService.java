@@ -139,6 +139,15 @@ public class EntityService implements CSourceHandler {
 		this.microServiceUtils.registerCSourceReceiver(this);
 	}
 
+	// datasetId of an expanded attribute instance; default instance -> DEFAULT_DATA_SET_ID (4.5.2)
+	private static String instanceDatasetId(Map<String, Object> instance) {
+		Object ds = instance.get(NGSIConstants.NGSI_LD_DATA_SET_ID);
+		if (ds instanceof List<?> l && !l.isEmpty()) {
+			return (String) ((Map<String, Object>) l.get(0)).get(NGSIConstants.JSON_LD_ID);
+		}
+		return NGSIConstants.DEFAULT_DATA_SET_ID;
+	}
+
 	private static List<NGSILDOperationResult> markForwardOp(List<NGSILDOperationResult> results, int opType,
 			int statusCode) {
 		for (NGSILDOperationResult r : results) {
@@ -1258,7 +1267,8 @@ public class EntityService implements CSourceHandler {
 				Iterator<RegistrationEntry> it = regs.iterator();
 				while (it.hasNext()) {
 					RegistrationEntry regEntry = it.next();
-					if (regEntry.expiresAt() > System.currentTimeMillis()) {
+					// expired = has an expiry (>0) that is in the past; the old "> now" removed VALID regs
+					if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
 						it.remove();
 						continue;
 					}
@@ -1365,6 +1375,7 @@ public class EntityService implements CSourceHandler {
 											regHost.cSourceId(), regEntry.replaceAttrs(), false, regEntry.regMode(),
 											false,
 											regEntry.queryEntityMap(), regEntry.host().cSourceAlias());
+									break;
 								case AppConstants.PARTIAL_UPDATE_REQUEST:
 									host = new RemoteHost(regHost.host(), regHost.tenant(), regHost.headers(),
 											regHost.cSourceId(), regEntry.updateAttrs(), false, regEntry.regMode(),
@@ -1554,6 +1565,13 @@ public class EntityService implements CSourceHandler {
 				RemoteHost remoteHost = entry.getKey();
 				MultiMap toFrwd = HttpUtils.getHeadToFrwd(remoteHost.headers(), headersFromReq);
 				List<Tuple2<Context, Map<String, Object>>> tuples = entry.getValue();
+				// 6.3.5: an application/json forward must carry its @context in the Link header
+				// (inline @context in a json body is BadRequestData on the receiver). Batches are
+				// uniform-context in practice; use the first entity's context.
+				// ponytail: mixed-context batches would need per-entity ld+json forwarding.
+				if (!tuples.isEmpty()) {
+					HttpUtils.setContextLinkHeader(toFrwd, tuples.get(0).getItem1());
+				}
 				List<Uni<Map<String, Object>>> compactedUnis = Lists.newArrayList();
 				for (Tuple2<Context, Map<String, Object>> tuple : tuples) {
 					Map<String, Object> expanded = tuple.getItem2();
@@ -1734,6 +1752,13 @@ public class EntityService implements CSourceHandler {
 				MultiMap toFrwd = HttpUtils.getHeadToFrwd(remoteHost.headers(), headersFromReq);
 
 				List<Tuple2<Context, Map<String, Object>>> tuples = entry.getValue();
+				// 6.3.5: an application/json forward must carry its @context in the Link header
+				// (inline @context in a json body is BadRequestData on the receiver). Batches are
+				// uniform-context in practice; use the first entity's context.
+				// ponytail: mixed-context batches would need per-entity ld+json forwarding.
+				if (!tuples.isEmpty()) {
+					HttpUtils.setContextLinkHeader(toFrwd, tuples.get(0).getItem1());
+				}
 				List<Uni<Map<String, Object>>> compactedUnis = Lists.newArrayList();
 				for (Tuple2<Context, Map<String, Object>> tuple : tuples) {
 					Map<String, Object> expanded = tuple.getItem2();
@@ -1758,7 +1783,11 @@ public class EntityService implements CSourceHandler {
 						return HttpUtils
 								.connect(webClient,
 										remoteHost.host() + NGSIConstants.ENDPOINT_BATCH_UPDATE,
-										tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
+										tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON,
+										// 5.6.9.4/6.16.3.1: forward the request incl. its options -
+										// dropping options=noOverwrite would overwrite on the receiver
+										noOverWrite ? Map.of(NGSIConstants.QUERY_PARAMETER_OPTIONS,
+												NGSIConstants.NO_OVERWRITE_OPTION) : null,
 										toFrwd, body, viaHeaders,
 										remoteHost.cSourceAlias(), -1)
 								.onItemOrFailure()
@@ -1785,7 +1814,9 @@ public class EntityService implements CSourceHandler {
 											remoteHost.host() + NGSIConstants.NGSI_LD_ENTITIES_ENDPOINT + "/"
 													+ entity.get(NGSIConstants.JSON_LD_ID) + "/"
 													+ NGSIConstants.QUERY_PARAMETER_ATTRS,
-											tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
+											tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON,
+											noOverWrite ? Map.of(NGSIConstants.QUERY_PARAMETER_OPTIONS,
+													NGSIConstants.NO_OVERWRITE_OPTION) : null,
 											toFrwd, body, viaHeaders,
 											remoteHost.cSourceAlias(), -1)
 									.onItemOrFailure()
@@ -1841,19 +1872,34 @@ public class EntityService implements CSourceHandler {
 							result.add(opResult);
 							Map<String, Object> old = (Map<String, Object>) success.get("old");
 							MicroServiceUtils.putIntoIdMap(oldEntities, entityId, old);
-							// noOverwrite (NGSI-LD 5.6.9): attributes already present in the old entity
-							// were left untouched -> report them as notUpdated so the batch returns 207.
+							// noOverwrite (5.6.3.4): only an instance whose datasetId matches an EXISTING
+							// instance (default matches default) is left untouched -> notUpdated. Attribute
+							// NAME overlap alone is not enough - new datasetId instances get appended.
 							if (noOverWrite && old != null) {
 								List<Map<String, Object>> submitted = request.getPayload().get(entityId);
 								if (submitted != null) {
 									for (Map<String, Object> subEntity : submitted) {
-										for (String attr : subEntity.keySet()) {
+										for (Entry<String, Object> attrEntry : subEntity.entrySet()) {
+											String attr = attrEntry.getKey();
 											if (attr.startsWith("@")
 													|| NGSIConstants.ENTITY_BASE_PROPS.contains(attr)) {
 												continue;
 											}
-											if (old.containsKey(attr)) {
-												opResult.addNotUpdated(attr);
+											Object oldVal = old.get(attr);
+											if (!(oldVal instanceof List<?> oldInstances)
+													|| !(attrEntry.getValue() instanceof List<?> newInstances)) {
+												continue;
+											}
+											Set<String> oldDatasetIds = Sets.newHashSet();
+											for (Object oldInst : oldInstances) {
+												oldDatasetIds.add(instanceDatasetId((Map<String, Object>) oldInst));
+											}
+											for (Object newInst : newInstances) {
+												if (oldDatasetIds
+														.contains(instanceDatasetId((Map<String, Object>) newInst))) {
+													opResult.addNotUpdated(attr);
+													break;
+												}
 											}
 										}
 									}
@@ -2038,6 +2084,13 @@ public class EntityService implements CSourceHandler {
 			MultiMap toFrwd = HttpUtils.getHeadToFrwd(remoteHost.headers(), headersFromReq);
 
 			List<Tuple2<Context, Map<String, Object>>> tuples = entry.getValue();
+				// 6.3.5: an application/json forward must carry its @context in the Link header
+				// (inline @context in a json body is BadRequestData on the receiver). Batches are
+				// uniform-context in practice; use the first entity's context.
+				// ponytail: mixed-context batches would need per-entity ld+json forwarding.
+				if (!tuples.isEmpty()) {
+					HttpUtils.setContextLinkHeader(toFrwd, tuples.get(0).getItem1());
+				}
 			List<Uni<Map<String, Object>>> compactedUnis = Lists.newArrayList();
 			for (Tuple2<Context, Map<String, Object>> tuple : tuples) {
 				Map<String, Object> expanded = tuple.getItem2();
@@ -2062,7 +2115,10 @@ public class EntityService implements CSourceHandler {
 					return HttpUtils
 							.connect(webClient,
 									remoteHost.host() + NGSIConstants.ENDPOINT_BATCH_UPSERT,
-									tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON, null,
+									tenant, AppConstants.POST_OP, AppConstants.NGB_APPLICATION_JSON,
+									// 5.6.8.4/6.15.3.1: forward the request incl. its options - without
+									// options=update the receiver would REPLACE instead of update
+									doReplace ? null : Map.of(NGSIConstants.QUERY_PARAMETER_OPTIONS, "update"),
 									toFrwd, body, viaHeaders,
 									remoteHost.cSourceAlias(), -1)
 							.onItemOrFailure().transform((response, failure) -> {
@@ -2766,6 +2822,13 @@ public class EntityService implements CSourceHandler {
 				RemoteHost remoteHost = entry.getKey();
 				MultiMap toFrwd = HttpUtils.getHeadToFrwd(remoteHost.headers(), headersFromReq);
 				List<Tuple2<Context, Map<String, Object>>> tuples = entry.getValue();
+				// 6.3.5: an application/json forward must carry its @context in the Link header
+				// (inline @context in a json body is BadRequestData on the receiver). Batches are
+				// uniform-context in practice; use the first entity's context.
+				// ponytail: mixed-context batches would need per-entity ld+json forwarding.
+				if (!tuples.isEmpty()) {
+					HttpUtils.setContextLinkHeader(toFrwd, tuples.get(0).getItem1());
+				}
 				List<Uni<Map<String, Object>>> compactedUnis = Lists.newArrayList();
 				for (Tuple2<Context, Map<String, Object>> tuple : tuples) {
 					Map<String, Object> expanded = tuple.getItem2();

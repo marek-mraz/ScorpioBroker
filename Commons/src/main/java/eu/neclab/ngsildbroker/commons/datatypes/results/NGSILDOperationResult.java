@@ -29,7 +29,9 @@ public class NGSILDOperationResult {
 		super();
 		this.operationType = operationType;
 		this.entityId = entityId;
-		this.tenant = tenant;
+		// default tenant is the INTERNAL_NULL_KEY sentinel, never null (a forward result built
+		// from a tenant-less registration passed null and NPEd generateUpdateResultResponse)
+		this.tenant = tenant == null ? AppConstants.INTERNAL_NULL_KEY : tenant;
 	}
 
 	public List<CRUDSuccess> getSuccesses() {
