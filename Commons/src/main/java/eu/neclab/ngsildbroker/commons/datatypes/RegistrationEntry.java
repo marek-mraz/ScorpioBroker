@@ -712,7 +712,7 @@ public class RegistrationEntry {
 			} else if (eIdp != null) {
 				boolean matchFound = false;
 				for (String entry : idSet) {
-					if (entry.matches(eIdp)) {
+					if (idMatchesPattern(entry, eIdp)) { // idPattern is find-match (Table 6.4.3.2/5.12); fixes D018_02_05 GET fwd
 						matchFound = true;
 						result.addAttr(entry);
 					}

@@ -1517,13 +1517,20 @@ public class EntityService implements CSourceHandler {
 					new CreateEntityRequest(tenant, entity, zip), entityId);
 			Map<String, Object> local = split.getItem1();
 			Context context = itContext.next();
-			if (local != null) {
+			Collection<Tuple2<RemoteHost, Map<String, Object>>> remotes = split.getItem2();
+			// 5.6.1.4 / 4.3.6.3: exclusively/redirect-registered attrs are forwarded and removed from the
+			// fragment; if only the {id,type} shell remains and a real forward happened, do NOT create it
+			// locally (a proxied broker holds no data for registered attrs) - a spurious shell-create of an
+			// existing entity reports AlreadyExists -> wrong 207 (D012_01_exc). Mirrors single-create guard.
+			boolean localHasRealAttrs = local != null
+					&& local.keySet().stream().anyMatch(k -> !NGSIConstants.ENTITY_BASE_PROPS.contains(k));
+			boolean skipEmptyLocalShell = !remotes.isEmpty() && !localHasRealAttrs;
+			if (local != null && !local.isEmpty() && !skipEmptyLocalShell) {
 				MicroServiceUtils.putIntoIdMap(localEntities, (String) local.get(NGSIConstants.JSON_LD_ID), local);
 
 			} else {
 				itContext.remove();
 			}
-			Collection<Tuple2<RemoteHost, Map<String, Object>>> remotes = split.getItem2();
 			for (Tuple2<RemoteHost, Map<String, Object>> remote : remotes) {
 				List<Tuple2<Context, Map<String, Object>>> entities2Context;
 				if (remoteHost2Batch.containsKey(remote.getItem1())) {
@@ -1941,17 +1948,20 @@ public class EntityService implements CSourceHandler {
 					new UpsertEntityRequest(tenant, entity, zip), entityId);
 			Map<String, Object> local = split.getItem1();
 			Context context = itContext.next();
+			Collection<Tuple2<RemoteHost, Map<String, Object>>> remotes = split.getItem2();
 			// 4.3.6.3 / 5.6.8: a redirect/exclusive CSR holds the data. If only the {id,type} shell
 			// remains locally (no unregistered attrs), do NOT upsert it locally - that spurious
 			// shell-create reports wasUpdated=false and wrongly drags the batch result to 201 (D013_red).
-			boolean hasLocalAttrs = local != null
+			// But only skip when a real forward happened (remotes non-empty); otherwise a pure-local
+			// upsert whose payload is base-only (e.g. just a scope, 004_03_04) must still be stored.
+			boolean localHasRealAttrs = local != null
 					&& local.keySet().stream().anyMatch(k -> !NGSIConstants.ENTITY_BASE_PROPS.contains(k));
-			if (hasLocalAttrs) {
+			boolean skipEmptyLocalShell = !remotes.isEmpty() && !localHasRealAttrs;
+			if (local != null && !local.isEmpty() && !skipEmptyLocalShell) {
 				MicroServiceUtils.putIntoIdMap(localEntities, entityId, local);
 			} else {
 				itContext.remove();
 			}
-			Collection<Tuple2<RemoteHost, Map<String, Object>>> remotes = split.getItem2();
 			for (Tuple2<RemoteHost, Map<String, Object>> remote : remotes) {
 				List<Tuple2<Context, Map<String, Object>>> entities2Context;
 				if (remoteHost2Batch.containsKey(remote.getItem1())) {
