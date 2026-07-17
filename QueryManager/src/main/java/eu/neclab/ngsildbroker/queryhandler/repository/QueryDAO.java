@@ -1249,9 +1249,11 @@ public class QueryDAO {
 			query.append(dollar);
 			query.append(')');
 			dollar++;
-			tuple.addInteger(limit);
+			// Without count we fetch ONE extra probe row: its presence is the only reliable
+			// "there is a next page" signal. The old guess (offset + 2*limit on a full page)
+			// emitted rel="next" links to EMPTY pages, which federated brokers then follow.
+			tuple.addInteger(count ? limit : limit + 1);
 			tuple.addInteger(offset);
-			;
 		} else {
 
 			if (tokenProvided) {
@@ -1393,14 +1395,18 @@ public class QueryDAO {
 					Row first = it.next();
 					entityMap.setManualSize(first.getInteger(3));
 				} else {
-
-					if (rowSize < limit) {
+					if (rowSize <= limit) {
 						entityMap.setManualSize(offset + rowSize);
 					} else {
-						entityMap.setManualSize(offset + 2 * limit);
+						// probe row present (we fetched limit+1) -> exactly one page more is known
+						entityMap.setManualSize(offset + limit + 1);
 					}
 				}
+				int dataRows = 0;
 				while (it.hasNext()) {
+					if (!count && ++dataRows > limit) {
+						break; // drop the limit+1 probe row from the result
+					}
 					Row row = it.next();
 					// a.ID, D0.ENTITY, D0.PARENT, D0.SIZE
 					String id = row.getString(0);

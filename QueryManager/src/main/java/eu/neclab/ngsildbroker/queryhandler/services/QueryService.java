@@ -208,7 +208,7 @@ public class QueryService implements CSourceHandler {
 								return doJoinIfNeeded(tenant, result, updatedEntityCache, context, join, joinLevel,
 										viaHeaders, pickTerm, omitTerm, entityMap.isDistEntities());
 							} else {
-								return updateEntityMapAndRepull(deleted, entityMap, updatedEntityCache, tenant,
+								return updateEntityMapAndRepull(result, deleted, entityMap, updatedEntityCache, tenant,
 										idsAndTypeQueryAndIdPattern, attrsQuery, qQuery, geoQuery, scopeQuery,
 										langQuery, limit, offSet, count, dataSetIdTerm, join, joinLevel, context,
 										jsonKeys, headersFromReq, pickTerm, omitTerm, viaHeaders, localOnly);
@@ -254,7 +254,7 @@ public class QueryService implements CSourceHandler {
 									return doJoinIfNeeded(tenant, result, updatedEntityCache, context, join, joinLevel,
 											viaHeaders, pickTerm, omitTerm, entityMap.isDistEntities());
 								} else {
-									return updateEntityMapAndRepull(deleted, entityMap, updatedEntityCache, tenant,
+									return updateEntityMapAndRepull(result, deleted, entityMap, updatedEntityCache, tenant,
 											idsAndTypeQueryAndIdPattern, attrsQuery, qQuery, geoQuery, scopeQuery,
 											langQuery, limit, offSet, count, dataSetIdTerm, join, joinLevel, context,
 											jsonKeys, headersFromReq, pickTerm, omitTerm, viaHeaders, localOnly);
@@ -291,7 +291,7 @@ public class QueryService implements CSourceHandler {
 														join, joinLevel, viaHeaders, pickTerm, omitTerm,
 														entityMap.isDistEntities());
 											} else {
-												return updateEntityMapAndRepull(deleted, entityMap, updatedEntityCache2,
+												return updateEntityMapAndRepull(result, deleted, entityMap, updatedEntityCache2,
 														tenant, idsAndTypeQueryAndIdPattern, attrsQuery, qQuery,
 														geoQuery, scopeQuery, langQuery, limit, offSet, count,
 														dataSetIdTerm, join, joinLevel, context, jsonKeys,
@@ -316,7 +316,7 @@ public class QueryService implements CSourceHandler {
 														joinLevel, viaHeaders, pickTerm, omitTerm,
 														entityMap.isDistEntities());
 											} else {
-												return updateEntityMapAndRepull(deleted, entityMap, updatedEntityCache,
+												return updateEntityMapAndRepull(result, deleted, entityMap, updatedEntityCache,
 														tenant, idsAndTypeQueryAndIdPattern, attrsQuery, qQuery,
 														geoQuery, scopeQuery, langQuery, limit, offSet, count,
 														dataSetIdTerm, join, joinLevel, context, jsonKeys,
@@ -610,7 +610,8 @@ public class QueryService implements CSourceHandler {
 
 	}
 
-	private Uni<QueryResult> updateEntityMapAndRepull(Map<String, Map<String, Object>> deleted, EntityMap entityMap,
+	private Uni<QueryResult> updateEntityMapAndRepull(QueryResult currentResult,
+			Map<String, Map<String, Object>> deleted, EntityMap entityMap,
 			EntityCache entityCache, String tenant,
 			List<Tuple3<String[], TypeQueryTerm, String>> idsAndTypeQueryAndIdPattern, AttrsQueryTerm attrsQuery,
 			QQueryTerm qQuery, GeoQueryTerm geoQuery, ScopeQueryTerm scopeQuery, LanguageQueryTerm langQuery, int limit,
@@ -646,7 +647,19 @@ public class QueryService implements CSourceHandler {
 		//
 		// }
 
-		entityMap.setChanged(entityMap.removeEntries(deleted.keySet()));
+		boolean removedAny = entityMap.removeEntries(deleted.keySet());
+		entityMap.setChanged(removedAny);
+		// ponytail: hard ceiling of 5 repulls per request — repulls can re-add
+		// "generated-" entries, so no-progress detection alone cannot guarantee
+		// termination; raise the cap if a legitimate deep-federation case appears.
+		if (!removedAny || entityMap.incAndGetRepullCount() > 5) {
+			// Termination guard: the filtered-out entities are not (or no longer) in the
+			// entity map, so a repull cannot change the outcome — recursing anyway loops
+			// forever (recursive Uni chain -> StackOverflowError, then container OOM).
+			logger.warn("Distributed query repull made no progress for {} filtered entities; returning current result",
+					deleted.size());
+			return Uni.createFrom().item(currentResult);
+		}
 
 		return fillCacheFromEntityMap(entityMap, entityCache, context, headersFromReq, true, tenant, offSet,
 				limit + (deleted.size() * 3)).onItem().transformToUni(updatedCache -> {
@@ -1638,12 +1651,8 @@ public class QueryService implements CSourceHandler {
 						continue;
 					}
 					Map<String, Object> currentValue = attribMap.get(datasetId);
-					Long currentModifiedDate = SerializationTools
-							.date2Long(((List<Map<String, String>>) currentValue.get(NGSIConstants.NGSI_LD_MODIFIED_AT))
-									.get(0).get(NGSIConstants.JSON_LD_VALUE));
-					Long newModifiedDate = SerializationTools
-							.date2Long(((List<Map<String, String>>) attrEntry.get(NGSIConstants.NGSI_LD_MODIFIED_AT))
-									.get(0).get(NGSIConstants.JSON_LD_VALUE));
+					Long currentModifiedDate = attrModifiedAt(currentValue);
+					Long newModifiedDate = attrModifiedAt(attrEntry);
 					if (newModifiedDate > currentModifiedDate) {
 						attribMap.put(datasetId, attrEntry);
 						attsDataset2CurrentRegMode.put(key + datasetId, regMode);
@@ -1655,6 +1664,17 @@ public class QueryService implements CSourceHandler {
 			}
 		}
 
+	}
+
+	// 4.3.6.1: context sources may omit system attributes — "at a minimum no error
+	// shall be returned if they are not available". Missing modifiedAt sorts oldest.
+	@SuppressWarnings("unchecked")
+	private static Long attrModifiedAt(Map<String, Object> attr) {
+		Object mod = attr.get(NGSIConstants.NGSI_LD_MODIFIED_AT);
+		if (mod == null) {
+			return 0L;
+		}
+		return SerializationTools.date2Long(((List<Map<String, String>>) mod).get(0).get(NGSIConstants.JSON_LD_VALUE));
 	}
 
 	public Uni<Void> handleRegistryChange(CSourceBaseRequest req) {
@@ -1765,7 +1785,9 @@ public class QueryService implements CSourceHandler {
 							Context contextTBU = remoteHost.context();
 							List<String> ogAtContext = contextTBU.getOriginalAtContext();
 							if (ogAtContext != null && !ogAtContext.isEmpty()) {
-								remoteHost.headers().add(HttpHeaders.LINK, "<" + ogAtContext.get(0)
+								// set, not add: remoteHost.headers() is shared and this path can run
+								// repeatedly for the same host — add() grows the header map unboundedly
+								remoteHost.headers().set(HttpHeaders.LINK, "<" + ogAtContext.get(0)
 										+ ">; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\"");
 							}
 							remoteHost.headers().set(HttpHeaders.ACCEPT, AppConstants.NGB_APPLICATION_JSON);

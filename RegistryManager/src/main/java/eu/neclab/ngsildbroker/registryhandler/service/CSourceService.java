@@ -52,6 +52,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import io.quarkus.runtime.Startup;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -133,7 +134,33 @@ public class CSourceService {
 
 	}
 
+	// 5.2.9 requires endpoint to be a URI; 5.9.2/5.9.3 mandate BadRequestData when
+	// 5.2.9 restrictions are not met. Without this check a garbage endpoint (e.g. two
+	// URLs concatenated) is accepted and later wedges the forwarding path.
+	@SuppressWarnings("unchecked")
+	private static ResponseException endpointError(Map<String, Object> registration) {
+		Object epObj = registration.get(NGSIConstants.NGSI_LD_ENDPOINT);
+		if (epObj == null) {
+			return null;
+		}
+		try {
+			String ep = (String) ((List<Map<String, Object>>) epObj).get(0).get(NGSIConstants.JSON_LD_VALUE);
+			URI uri = new URI(ep);
+			if (uri.getScheme() == null || uri.getHost() == null) {
+				return new ResponseException(ErrorType.BadRequestData, "endpoint is not a valid URI: " + ep);
+			}
+		} catch (Exception e) {
+			return new ResponseException(ErrorType.BadRequestData, "endpoint is not a valid URI");
+		}
+		return null;
+	}
+
 	public Uni<NGSILDOperationResult> createRegistration(String tenant, Map<String, Object> registrationIn) {
+
+		ResponseException epErr = endpointError(registrationIn);
+		if (epErr != null) {
+			return Uni.createFrom().failure(epErr);
+		}
 
 		String id;
 		Object idObj = registrationIn.get(NGSIConstants.JSON_LD_ID);
@@ -182,6 +209,10 @@ public class CSourceService {
 
 	public Uni<NGSILDOperationResult> updateRegistration(String tenant, String registrationId,
 			Map<String, Object> entry, Set<String> removeMembers) {
+		ResponseException epErr = endpointError(entry);
+		if (epErr != null) {
+			return Uni.createFrom().failure(epErr);
+		}
 		AppendCSourceRequest request = new AppendCSourceRequest(tenant, registrationId, entry);
 		// Capture the pre-update registration so the subscription manager can tell newlyMatching /
 		// updated / noLongerMatching apart (NGSI-LD 5.11.7) by comparing match state before vs after.

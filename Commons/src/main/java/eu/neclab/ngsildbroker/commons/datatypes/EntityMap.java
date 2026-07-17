@@ -43,6 +43,12 @@ public class EntityMap {
 
 	private boolean changed = false;
 
+	// In-request repull counter (never serialized): hard ceiling for the
+	// distributed-query repull recursion, since a repull can re-add entries
+	// ("generated-" placeholders) and undo the map shrink that would otherwise
+	// terminate the loop. Fresh per request because entity maps are re-read.
+	private transient int repullCount = 0;
+
 	private Query query;
 
 	private String id;
@@ -193,24 +199,19 @@ public class EntityMap {
 		return cSourceId2RemoteHost.get(cId);
 	}
 
-	public boolean removeEntries(Set<String> ids) {
-		if (ids.isEmpty()) {
-			return false;
-		}
-		ids.forEach(id -> {
-			Set<String> cIds = entityId2CSourceIds.remove(id);
-			// if (cIds != null) {
-			// cIds.forEach(cId -> {
-			// Set<String> eIds = csourceId2EntityIds.get(cId);
-			// if(eIds != null) {
-			// eIds.remove(id);
-			// }
-			//
-			// });
-			// }
-		});
+	public int incAndGetRepullCount() {
+		return ++repullCount;
+	}
 
-		return true;
+	public boolean removeEntries(Set<String> ids) {
+		// Must report whether anything was ACTUALLY removed: the distributed-query
+		// repull loop uses this as its termination signal (a no-op removal would
+		// otherwise recurse forever -> StackOverflow/OOM).
+		boolean removed = false;
+		for (String id : ids) {
+			removed |= entityId2CSourceIds.remove(id) != null;
+		}
+		return removed;
 	}
 
 	public void addLinkedMap(String cSourceId, String mapId) {

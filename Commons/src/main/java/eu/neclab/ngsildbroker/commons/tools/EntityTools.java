@@ -947,10 +947,12 @@ public final class EntityTools {
 				.transformToUni(expanded -> {
 
 					Tuple2<Integer, Integer> nextT = HttpUtils.parseNextLink(response);
-					if (nextT != null) {
+					// Follow next-links only for hosts forwarded in query mode. A retrieve-mode
+					// forward is GET /entities/{id} which ignores limit/offset — "following" its
+					// (bogus) next-link repeats the identical request forever: infinite recursion,
+					// unbounded memory, request never completes (the IOP federated-retrieve hang).
+					if (nextT != null && (remoteHost.isCanDoBatchQuery() || remoteHost.isCanDoQuery())) {
 						logger.debug("calling next");
-
-						logger.debug(remoteHost.toString());
 						return getRemoteEntities(remoteHost, webClient, timeout, nextT.getItem1(), nextT.getItem2(),
 								ldService).onItem()
 								.transform(nextResult -> {
