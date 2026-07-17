@@ -1799,6 +1799,25 @@ public final class HttpUtils {
 		return RestResponse.ok(result, MediaType.APPLICATION_JSON);
 	}
 
+	// NGSI-LD 6.3.5: forwarded provision requests carry application/json bodies compacted against
+	// the ORIGINAL request's @context — that context must travel in a Link header, otherwise the
+	// receiving broker expands the terms with the default @context and stores corrupted
+	// default-context IRIs (observed: forwarded create at C stored ngsi-ld:default-context/name).
+	public static void setContextLinkHeader(io.vertx.mutiny.core.MultiMap headers, Context context) {
+		if (context == null) {
+			return;
+		}
+		List<String> ogAtContext = context.getOriginalAtContext();
+		if (ogAtContext == null || ogAtContext.isEmpty()) {
+			return;
+		}
+		String ctx = ogAtContext.get(0);
+		if (ctx != null && (ctx.startsWith("http://") || ctx.startsWith("https://"))) {
+			headers.set("Link",
+					"<" + ctx + ">; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\"");
+		}
+	}
+
 	public static io.vertx.mutiny.core.MultiMap getHeadToFrwd(io.vertx.mutiny.core.MultiMap remoteHeaders,
 			MultiMap headersFromReq) {
 		io.vertx.mutiny.core.MultiMap toFrwd = io.vertx.mutiny.core.MultiMap.newInstance(HeadersMultiMap.headers());

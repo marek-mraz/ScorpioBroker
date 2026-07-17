@@ -1037,6 +1037,9 @@ public final class EntityTools {
 						remoteHost2QueryInfo.put(hostToQuery, queryInfos);
 					}
 
+					// NGSI-LD 4.3.6.1: "all constraints specified in the registration shall be
+					// respected" when issuing distributed requests — the forwarded query is
+					// narrowed to the registered Entity IDs / types / attribute names.
 					if (!queryInfos.isFullIdFound()) {
 						if (regEntry.eId() != null) {
 							queryInfos.getIds().add(regEntry.eId());
