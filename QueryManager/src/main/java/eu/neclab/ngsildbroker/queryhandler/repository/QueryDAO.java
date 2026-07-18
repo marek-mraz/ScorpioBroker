@@ -1527,6 +1527,15 @@ public class QueryDAO {
 		});
 	}
 
+	// A registration change invalidates every stored distributed query plan: an entityMap
+	// re-found via query_checksum would repull with a pre-change host set / lost aux-vs-inclusive
+	// precedence (IOP_CNF_03_01: stale map made an auxiliary source win the merge).
+	public Uni<Void> deleteAllEntityMaps(String tenant) {
+		logger.debug("deleteAllEntityMaps");
+		return connectionManager.executeQuery(tenant, "DELETE FROM entitymap", Tuple.tuple(), false)
+				.replaceWithVoid();
+	}
+
 	public Uni<Void> deleteEntityMap(String tenant, String entityMapId) {
 		logger.debug("deleteEntityMap");
 		String sql = "DELETE FROM ENTITYMAP WHERE map_id=$1 RETURNING map_id";

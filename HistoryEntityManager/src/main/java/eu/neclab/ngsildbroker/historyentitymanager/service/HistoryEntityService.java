@@ -443,13 +443,13 @@ public class HistoryEntityService implements CSourceHandler {
 			for (RegistrationEntry regEntry : regEntries) {
 				boolean matches = (regEntry.eId() == null && regEntry.eIdp() == null)
 						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp()));
+						|| (regEntry.eIdp() != null && RegistrationEntry.idMatchesPattern(entityId, regEntry.eIdp()));
 				if (!matches) {
 					continue;
 				}
 				if (!regEntry.deleteTemporal()) {
 					if (regEntry.regMode() > 1) {
-						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						throw new RuntimeException(new ResponseException(ErrorType.Conflict, "Operation not supported by exclusive/redirect registration"));
 					}
 					continue;
 				}
@@ -468,14 +468,14 @@ public class HistoryEntityService implements CSourceHandler {
 			for (RegistrationEntry regEntry : regEntries) {
 				boolean matches = ((regEntry.eId() == null && regEntry.eIdp() == null)
 						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp())))
+						|| (regEntry.eIdp() != null && RegistrationEntry.idMatchesPattern(entityId, regEntry.eIdp())))
 								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()));
 				if (!matches) {
 					continue;
 				}
 				if (!regEntry.deleteAttrInstanceTemporal()) {
 					if (regEntry.regMode() > 1) {
-						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						throw new RuntimeException(new ResponseException(ErrorType.Conflict, "Operation not supported by exclusive/redirect registration"));
 					}
 					continue;
 				}
@@ -493,14 +493,14 @@ public class HistoryEntityService implements CSourceHandler {
 			for (RegistrationEntry regEntry : regEntries) {
 				boolean matches = ((regEntry.eId() == null && regEntry.eIdp() == null)
 						|| (regEntry.eId() != null && regEntry.eId().equals(entityId))
-						|| (regEntry.eIdp() != null && entityId.matches(regEntry.eIdp())))
+						|| (regEntry.eIdp() != null && RegistrationEntry.idMatchesPattern(entityId, regEntry.eIdp())))
 								&& (regEntry.eProp() == null || regEntry.eProp().equals(request.getAttribName()));
 				if (!matches) {
 					continue;
 				}
 				if (!regEntry.deleteAttrsTemporal()) {
 					if (regEntry.regMode() > 1) {
-						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						throw new RuntimeException(new ResponseException(ErrorType.Conflict, "Operation not supported by exclusive/redirect registration"));
 					}
 					continue;
 				}
@@ -638,13 +638,6 @@ public class HistoryEntityService implements CSourceHandler {
 						default:
 							opSupported = false;
 					}
-					if (!opSupported) {
-						if (regEntry.regMode() > 1) {
-							throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
-						}
-						continue;
-					}
-
 					String propType = ((List<String>) ((List<Map<String, Object>>) entry.getValue()).get(0)
 							.get(NGSIConstants.JSON_LD_TYPE)).get(0);
 					Tuple2<Set<String>, Set<String>> matches;
@@ -656,6 +649,21 @@ public class HistoryEntityService implements CSourceHandler {
 								location);
 					}
 					if (matches != null) {
+						if (!opSupported) {
+							// Temporal 5.6.12.4-5.6.16.4: unsupported op on a MATCHING exclusive/redirect
+							// reg = Conflict for the matched part; "the matching Attributes are then
+							// removed ... and not processed further". The pre-match throw here used to
+							// fail EVERY temporal write on the tenant for any reg lacking the op.
+							// Conflict surfacing in the response is not yet plumbed (see error.md NIGHT4);
+							// data handling (strip) is spec-correct.
+							if (regEntry.regMode() > 1) {
+								toBeRemoved.add(entry.getKey());
+								if (regEntry.regMode() == 3) {
+									break;
+								}
+							}
+							continue;
+						}
 						Map<String, Object> tmp;
 						if (cId2RemoteHostEntity.containsKey(regEntry.cId())) {
 							tmp = cId2RemoteHostEntity.get(regEntry.cId()).getItem2();

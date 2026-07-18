@@ -126,6 +126,10 @@ public class NGSILDOperationResult {
 	}
 
 	private static int getOperationCode(String operationType) {
+		if (operationType == null) {
+			// a spec-shaped BatchOperationResult (5.2.16) carries no operation name
+			return -1;
+		}
 		switch (operationType) {
 			case "Create":
 				return AppConstants.CREATE_REQUEST;
@@ -154,20 +158,41 @@ public class NGSILDOperationResult {
 		// TODO some more content checks and error throwing if there is an unexpected
 		// result
 		String entityId = (String) payload.get(NGSIConstants.QUERY_PARAMETER_ID);
-		int type = getOperationCode((String) payload.get(NGSIConstants.ERROR_TYPE));
+		Object opName = payload.get(NGSIConstants.ERROR_TYPE);
+		int type = getOperationCode(opName instanceof String ? (String) opName : null);
 		NGSILDOperationResult result = new NGSILDOperationResult(type, entityId, tenant);
 		Object tmp = payload.get("success");
-		if (tmp != null && tmp instanceof List) {
-			List<Map<String, Object>> successList = (List<Map<String, Object>>) tmp;
-			for (Map<String, Object> entry : successList) {
-				result.addSuccess(CRUDSuccess.fromPayload(entry));
+		if (tmp instanceof List) {
+			for (Object entry : (List<Object>) tmp) {
+				if (entry instanceof Map) {
+					result.addSuccess(CRUDSuccess.fromPayload((Map<String, Object>) entry));
+				} else if (entry instanceof String) {
+					// spec BatchOperationResult (5.2.16): success is an array of entity id strings
+					result.addSuccess(new CRUDSuccess(null, null, null, Sets.<Attrib>newHashSet()));
+				}
 			}
 		}
 		tmp = payload.get("failure");
-		if (tmp != null && tmp instanceof List) {
+		if (tmp instanceof List) {
 			List<Map<String, Object>> failList = (List<Map<String, Object>>) tmp;
 			for (Map<String, Object> entry : failList) {
 				result.addFailure(ResponseException.fromPayload(entry));
+			}
+		}
+		// spec BatchOperationResult (5.2.16): errors is [{entityId, error: ProblemDetails}]
+		tmp = payload.get("errors");
+		if (tmp instanceof List) {
+			for (Object entryO : (List<Object>) tmp) {
+				if (entryO instanceof Map) {
+					Object errO = ((Map<String, Object>) entryO).get("error");
+					if (errO instanceof Map) {
+						Map<String, Object> err = (Map<String, Object>) errO;
+						int status = err.get("status") instanceof Number ? ((Number) err.get("status")).intValue()
+								: 400;
+						result.addFailure(new ResponseException(status, (String) err.get("type"),
+								(String) err.get("title"), err.get("detail"), (String) null, null, null, null));
+					}
+				}
 			}
 		}
 		return result;

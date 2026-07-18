@@ -380,7 +380,7 @@ public class SubscriptionTools {
 									ldCtxList = Collections.singletonList(ldCtx);
 								} else {
 									// strip the implicit core context so a single user @context renders as that URL
-									List<String> orig = context.getOriginalAtContext();
+									List<String> orig = context.getUserAtContext();
 									List<String> nonCore = orig.stream()
 											.filter(c -> !NGSIConstants.CORE_CONTEXT_URLS.contains(c)).toList();
 									ldCtxList = nonCore.isEmpty() ? orig : nonCore;

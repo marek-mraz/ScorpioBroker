@@ -263,7 +263,10 @@ public class RegistrationEntry {
 				// fallbackAlias; the sourceIdentity probe failed against mocks anyway).
 				sourceAlias = host;
 			}
-			RemoteHost remoteHost = new RemoteHost(host, tenant, headers, cSourceId, canDoSingleOp, canDoBatchOp, 0,
+			// regMode must be the parsed registration mode — hardcoding 0 made every live-registered
+			// source auxiliary in the query path (mergeAttr degenerates to last-merged-wins;
+			// IOP_CNF_03_01/04_02). Regs loaded from DB (DBUtil.getAllRegistries) always carried it.
+			RemoteHost remoteHost = new RemoteHost(host, tenant, headers, cSourceId, canDoSingleOp, canDoBatchOp, mode,
 					false, false, sourceAlias);
 
 			boolean tmpCreateEntity = false;

@@ -347,7 +347,10 @@ public class EntityService implements CSourceHandler {
 			}
 
 		}
-		if (localEntity != null && !localEntity.isEmpty()) {
+		// 5.6.4: a partial update targets ONE attribute. If splitEntity forwarded it to a
+		// redirect/exclusive CSR, the local payload no longer carries it and the local op has
+		// nothing to do (running it NPEd in partialUpdateAttribute on the stripped payload).
+		if (localEntity != null && !localEntity.isEmpty() && localEntity.containsKey(request.getAttribName())) {
 			if (!unis.isEmpty() && isDifferentRemoteQueryAvailable(request, remoteEntitiesAndHosts, entityId)) {
 				request.setDistributed(true);
 			} else {
@@ -454,7 +457,22 @@ public class EntityService implements CSourceHandler {
 		} else {
 			request.setDistributed(false);
 		}
-		unis.add(localDeleteAttrib(request, entityId));
+		// 4.3.6.3: a redirect/exclusive CSR owns the attribute - the local instance legitimately
+		// does not exist, so a local 404 must not fail the (forward-authoritative) operation.
+		final boolean ignoreLocalMiss = remoteHosts.stream().anyMatch(h -> h.regMode() > 1);
+		unis.add(localDeleteAttrib(request, entityId).onFailure().recoverWithItem(e -> {
+			NGSILDOperationResult localResult = new NGSILDOperationResult(AppConstants.DELETE_ATTRIBUTE_REQUEST,
+					entityId, tenant);
+			if (ignoreLocalMiss && e instanceof ResponseException re && re.getErrorCode() == 404) {
+				return localResult;
+			}
+			if (e instanceof ResponseException re) {
+				localResult.addFailure(re);
+			} else {
+				localResult.addFailure(new ResponseException(ErrorType.InternalError, e.getMessage()));
+			}
+			return localResult;
+		}));
 		return Uni.combine().all().unis(unis).with(list -> getResult(list));
 
 	}
@@ -504,15 +522,18 @@ public class EntityService implements CSourceHandler {
 				if (!matches) {
 					continue;
 				}
-				if (!regEntry.deleteEntity() && !regEntry.deleteBatch()) {
+				// Delete Attribute (5.6.5) maps to the deleteAttrs operation (Table 4.20-1), not
+				// deleteEntity/deleteBatch
+				if (!regEntry.deleteAttrs()) {
 					if (regEntry.regMode() > 1) {
-						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						// 5.6.1.4/5.6.6.4 etc.: unsupported op on exclusive/redirect = "error of type Conflict"
+						throw new RuntimeException(new ResponseException(ErrorType.Conflict, "Operation not supported by exclusive/redirect registration"));
 					}
 					continue;
 				}
 				result.add(new RemoteHost(regEntry.host().host(), regEntry.host().tenant(),
-							regEntry.host().headers(), regEntry.host().cSourceId(), regEntry.deleteEntity(),
-							regEntry.deleteBatch(), regEntry.regMode(), false, regEntry.queryEntityMap(),
+							regEntry.host().headers(), regEntry.host().cSourceId(), regEntry.deleteAttrs(),
+							false, regEntry.regMode(), false, regEntry.queryEntityMap(),
 							regEntry.host().cSourceAlias()));
 			}
 		}
@@ -523,7 +544,21 @@ public class EntityService implements CSourceHandler {
 			io.vertx.core.MultiMap headersFromReq, ViaHeaders viaHeaders, boolean localOnly) {
 		DeleteEntityRequest request = new DeleteEntityRequest(tenant, entityId, zip);
 		// local=true -> do not forward to Context Sources (NGSI-LD 6.3.18).
-		Set<RemoteHost> remoteHosts = localOnly ? Set.of() : getRemoteHostsForDelete(request, entityId);
+		// 5.6.6.4: an unsupported Delete Entity on a matching exclusive/redirect reg is a Conflict,
+		// but "the input data shall be used to remove the entity locally if it exists" is
+		// unconditional - so the local delete still runs and a partial success yields 207.
+		Set<RemoteHost> remoteHosts;
+		ResponseException unsupportedConflict = null;
+		try {
+			remoteHosts = localOnly ? Set.of() : getRemoteHostsForDelete(request, entityId);
+		} catch (RuntimeException e) {
+			if (e.getCause() instanceof ResponseException re && re.getErrorCode() == 409) {
+				unsupportedConflict = re;
+				remoteHosts = Set.of();
+			} else {
+				throw e;
+			}
+		}
 
 		// if (remoteHosts.isEmpty()) {
 		// return localDeleteEntity(request, context);
@@ -591,6 +626,20 @@ public class EntityService implements CSourceHandler {
 			localUni = localUni.onFailure().recoverWithItem(e -> {
 				NGSILDOperationResult r = new NGSILDOperationResult(AppConstants.DELETE_REQUEST, entityId, tenant);
 				if (!ignoreLocalMiss && e instanceof ResponseException re) {
+					r.addFailure(re);
+				}
+				return r;
+			});
+		}
+		if (unsupportedConflict != null) {
+			final ResponseException conflict = unsupportedConflict;
+			localUni = localUni.onItem().transform(r -> {
+				r.addFailure(conflict);
+				return r;
+			}).onFailure().recoverWithItem(e -> {
+				NGSILDOperationResult r = new NGSILDOperationResult(AppConstants.DELETE_REQUEST, entityId, tenant);
+				r.addFailure(conflict);
+				if (e instanceof ResponseException re) {
 					r.addFailure(re);
 				}
 				return r;
@@ -809,7 +858,8 @@ public class EntityService implements CSourceHandler {
 				}
 				if (!regEntry.deleteEntity() && !regEntry.deleteBatch()) {
 					if (regEntry.regMode() > 1) {
-						throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
+						// 5.6.1.4/5.6.6.4 etc.: unsupported op on exclusive/redirect = "error of type Conflict"
+						throw new RuntimeException(new ResponseException(ErrorType.Conflict, "Operation not supported by exclusive/redirect registration"));
 					}
 					continue;
 				}
@@ -1065,12 +1115,17 @@ public class EntityService implements CSourceHandler {
 		logger.debug("createMessage() :: started");
 		String entityId = (String) resolved.get(NGSIConstants.JSON_LD_ID);
 		CreateEntityRequest request = new CreateEntityRequest(tenant, resolved, zip);
+		List<ResponseException> regConflicts = new ArrayList<>();
 		Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> localAndRemote = splitEntity(
-				request, entityId);
+				request, entityId, regConflicts);
 		Map<String, Object> localEntity = localAndRemote.getItem1();
 		// local=true (NGSI-LD 6.3.18): handle only on this broker, do not forward to Context Sources.
 		Collection<Tuple2<RemoteHost, Map<String, Object>>> remoteEntitiesAndHosts = localOnly ? List.of()
 				: localAndRemote.getItem2();
+		if (localOnly) {
+			// 6.3.18: local scope = no distributed processing, so no per-registration Conflicts either.
+			regConflicts.clear();
+		}
 		// if (remoteEntitiesAndHosts.isEmpty()) {
 		// request.setPayload(localEntity);
 		// return createLocalEntity(request, context);
@@ -1137,7 +1192,10 @@ public class EntityService implements CSourceHandler {
 		// minimal create still stores its shell (avoids the "Uni set is empty" 500).
 		boolean localHasRealAttrs = localEntity != null
 				&& localEntity.keySet().stream().anyMatch(k -> !NGSIConstants.ENTITY_BASE_PROPS.contains(k));
-		boolean skipEmptyLocalShell = !remoteEntitiesAndHosts.isEmpty() && !localHasRealAttrs;
+		// Conflicted (unsupported exclusive/redirect) attrs count like forwarded ones: when they
+		// consumed the whole payload, do not create a local shell - 5.6.1.4 complete failure.
+		boolean skipEmptyLocalShell = (!remoteEntitiesAndHosts.isEmpty() || !regConflicts.isEmpty())
+				&& !localHasRealAttrs;
 		if (localEntity != null && !localEntity.isEmpty() && !skipEmptyLocalShell) {
 			if (!unis.isEmpty() && isDifferentRemoteQueryAvailable(request, remoteEntitiesAndHosts, entityId)) {
 				request.setDistributed(true);
@@ -1157,6 +1215,14 @@ public class EntityService implements CSourceHandler {
 				return localResult;
 
 			}));
+		}
+		// 5.6.1.4: each matching exclusive/redirect registration without createEntity support is a
+		// Conflict for its part; with other parts succeeding this aggregates to a 207.
+		for (ResponseException conflict : regConflicts) {
+			NGSILDOperationResult conflictResult = new NGSILDOperationResult(AppConstants.CREATE_REQUEST, entityId,
+					tenant);
+			conflictResult.addFailure(conflict);
+			unis.add(Uni.createFrom().item(conflictResult));
 		}
 		return Uni.combine().all().unis(unis).with(list -> {
 			return getResult(list);
@@ -1256,6 +1322,14 @@ public class EntityService implements CSourceHandler {
 
 	private Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> splitEntity(
 			BaseRequest request, String entityId) {
+		// Callers not yet surfacing per-registration Conflicts drop them here: the matched
+		// attrs are still stripped (spec-correct data handling), only the 207/Conflict in the
+		// response is missed. See error.md NIGHT4.
+		return splitEntity(request, entityId, new ArrayList<>());
+	}
+
+	private Tuple2<Map<String, Object>, Collection<Tuple2<RemoteHost, Map<String, Object>>>> splitEntity(
+			BaseRequest request, String entityId, List<ResponseException> conflicts) {
 		Map<String, Object> originalEntity = request.getPayload().get(entityId).get(0);
 		Collection<List<RegistrationEntry>> tenantRegs = tenant2CId2RegEntries.row(request.getTenant()).values();
 
@@ -1308,13 +1382,6 @@ public class EntityService implements CSourceHandler {
 						default:
 							opSupported = false;
 					}
-					if (!opSupported) {
-						if (regEntry.regMode() > 1) {
-							throw new RuntimeException(new ResponseException(ErrorType.OperationNotSupported, "Operation not supported by exclusive/redirect registration"));
-						}
-						continue;
-					}
-
 					List<Map<String, Object>> attrInstances = (List<Map<String, Object>>) entry.getValue();
 					Object typeVal = attrInstances.isEmpty() ? null
 							: attrInstances.get(0).get(NGSIConstants.JSON_LD_TYPE);
@@ -1331,6 +1398,24 @@ public class EntityService implements CSourceHandler {
 								location);
 					}
 					if (matches != null) {
+						if (!opSupported) {
+							// 5.6.1.4/5.6.6.4/5.6.19.4: a MATCHING exclusive/redirect registration whose
+							// registered operations do not include this op = "error of type Conflict ...
+							// or a partial success if some parts of it succeeded. The matching Attributes
+							// are then removed from the Fragment and not processed further." Inclusive
+							// regs without the op are silently skipped (forward only "in case the
+							// operation is supported").
+							if (regEntry.regMode() > 1) {
+								conflicts.add(new ResponseException(ErrorType.Conflict,
+										"Operation not supported by exclusive/redirect registration "
+												+ regEntry.cId()));
+								toBeRemoved.add(entry.getKey());
+								if (regEntry.regMode() == 3) {
+									break;
+								}
+							}
+							continue;
+						}
 						Map<String, Object> tmp;
 						if (cId2RemoteHostEntity.containsKey(regEntry.cId())) {
 							tmp = cId2RemoteHostEntity.get(regEntry.cId()).getItem2();
@@ -1456,7 +1541,12 @@ public class EntityService implements CSourceHandler {
 				List<RegistrationEntry> newRegs = Lists.newArrayList();
 				List<RegistrationEntry> newQueryRegs = Lists.newArrayList();
 				for (RegistrationEntry regEntry : regs) {
-					if ((regEntry.createEntity() || regEntry.appendAttrs() || regEntry.createBatch()
+					// Exclusive/redirect regs (regMode > 1) must be visible to the write path even
+					// without any write op: an unsupported op on a MATCHING exclusive/redirect reg is
+					// spec-mandated to yield Conflict (5.6.1.4/5.6.6.4/5.6.19.4), not silent local
+					// processing. Inclusive regs without write ops stay filtered (nothing to forward).
+					if ((regEntry.regMode() > 1 || regEntry.createEntity() || regEntry.appendAttrs()
+							|| regEntry.createBatch()
 							|| regEntry.deleteAttrs() || regEntry.deleteBatch() || regEntry.deleteEntity()
 							|| regEntry.mergeBatch() || regEntry.mergeEntity() || regEntry.replaceAttrs()
 							|| regEntry.replaceEntity() || regEntry.updateAttrs() || regEntry.updateBatch()

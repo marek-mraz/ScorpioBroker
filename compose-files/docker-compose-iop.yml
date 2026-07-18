@@ -1,7 +1,7 @@
 
 # YAML anchors to reuse configuration
 x-postgres-tmpl: &postgres-tmpl
-  image: imresamu/postgis:16-3.5
+  image: postgis/postgis:18-3.6
   environment:
     POSTGRES_USER: ngb
     POSTGRES_PASSWORD: ngb

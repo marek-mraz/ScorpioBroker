@@ -542,7 +542,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			// When the user supplied a single (already dereferenceable) URL @context, reference it
 			// directly so receivers see the original context; only inline/multi-context subscriptions
 			// need the re-hosted aggregate copy.
-			List<String> origCtx = request.getContext().getOriginalAtContext();
+			List<String> origCtx = request.getContext().getUserAtContext();
 			List<String> origNonCore = origCtx == null ? List.of()
 					: origCtx.stream().filter(c -> !NGSIConstants.CORE_CONTEXT_URLS.contains(c)).toList();
 			String linkUrl = origNonCore.size() == 1 ? origNonCore.get(0) : ctxUrl;
@@ -1056,6 +1056,13 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 										} else {
 											tombstoneAttribForDelete(attrib, message.getSendTimestamp(), delSysAttrs);
 										}
+									}
+									if (delAll && !showChanges && !attribs.isEmpty()) {
+										// deleteAll removes the WHOLE attribute (6.7.3.2), so per 5.8.6 the
+										// notification carries ONE tombstone without datasetId, not one per instance.
+										Map<String, Object> single = attribs.get(0);
+										single.remove(NGSIConstants.NGSI_LD_DATA_SET_ID);
+										payload.put(delAttr, List.of(single));
 									}
 								}
 								tmp.add(payload);

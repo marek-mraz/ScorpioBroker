@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.jsonldjava.core.Context;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -13,18 +14,29 @@ import io.smallrye.mutiny.tuples.Tuple3;
 import io.vertx.mutiny.core.MultiMap;
 
 public class QueryRemoteHost {
+	// This object is persisted as JSON into entitymap.remote_query (QueryDAO.storeEntityMap)
+	// and deserialized on map reuse. Jackson only sees bean-style getters, so every field the
+	// repull/merge path needs MUST be @JsonProperty-annotated — a dropped regMode deserializes
+	// as 0 (= auxiliary), collapsing aux-vs-inclusive precedence (4.3.6.2, IOP_CNF_03_01).
+	// headers/context stay unserialized on purpose (non-JSON-friendly types, rebuilt on use).
+	@JsonProperty
 	String host;
+	@JsonProperty
 	String tenant;
 	MultiMap headers;
+	@JsonProperty
 	String cSourceId;
 	boolean canDoQuery;
 	boolean canDoBatchQuery;
 	boolean canDoRetrieve;
+	@JsonProperty
 	int regMode;
 	List<Tuple3<String, String, String>> idsAndTypesAndIdPattern = Lists.newArrayList();
 	Map<String, Object> queryParams;
 	boolean canDoEntityMap;
+	@JsonProperty
 	boolean canDoZip;
+	@JsonProperty
 	String entityMapToken;
 	Context context;
 	ViaHeaders viaHeaders;

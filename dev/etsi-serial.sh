@@ -16,6 +16,8 @@
 #   SUITE          test-suite dir     (default ngsi-ld-test-suite)
 #   SKIP_UP=1      the 5-broker stack is already up (skip build + compose up)
 #   INCLUDE_MQTT=1 also run the MQTT suites (emqx is part of the stack)
+#   NO_RESET=1     never erase the DBs between suites (CI sets this) — only record the pollution
+#                  report; leftovers stay visible instead of being wiped
 # CI example:
 #   B1=http://host.docker.internal:9081/ngsi-ld/v1 ... B5=http://host.docker.internal:9085/ngsi-ld/v1 \
 #   CALLBACK_HOST=host.docker.internal dev/etsi-serial.sh
@@ -108,33 +110,73 @@ restart_broker() {  # force-recreate scorpio1 -> guaranteed-empty in-VM state. T
   done
   echo ">>> WARN: scorpio1 did not report healthy within ~80s after restart" >&2
 }
-reset_state() {  # between-suite reset: API deletes (evict caches) + clean_db (truncate DB incl temporal)
-                 # + force-recreate scorpio1 (the bulletproof in-VM clear). Order matters: DB is emptied
-                 # BEFORE the restart so caches rebuild empty. Together = a true clean slate, no leak.
+POLLUTION_MD=results/pollution-report.md
+check_pollution() {  # $1 = suite that JUST finished. Count leftover rows in EVERY broker's DB (all
+                     # tenant schemas) BEFORE anything erases them — leftovers mean a test-teardown
+                     # gap or a broker leak, and wiping first would destroy the evidence. Rows that
+                     # show up in the FINAL check (after an API-only reset) are the strongest signal:
+                     # state the NGSI-LD API itself cannot clean. Report-only; never fails the run.
+  local label="$1" pg out
+  for pg in scorpio-postgres-1 scorpio-postgres-2 scorpio-postgres-3 scorpio-postgres-4 scorpio-postgres-5; do
+    out=$(docker exec "$pg" psql -U ngb -d ngb -Atc "
+      SELECT schemaname||'.'||tablename||' = '||n FROM (
+        SELECT schemaname, tablename,
+               (xpath('/row/cnt/text()', query_to_xml(
+                 format('SELECT count(*) AS cnt FROM %I.%I', schemaname, tablename),
+                 false, true, '')))[1]::text::int AS n
+        FROM pg_tables
+        WHERE tablename IN ('entity','temporalentity','temporalentityattrinstance','entitymap',
+                            'csource','csourceinformation','subscriptions','registry_subscriptions')) t
+      WHERE n > 0 ORDER BY 1;" 2>/dev/null)
+    if [ $? -ne 0 ]; then  # a broken check must NOT read as "clean"
+      printf '### after %s — %s: CHECK FAILED (docker exec/psql error)\n\n' "$label" "$pg" >> "$POLLUTION_MD"
+    else
+      [ -n "$out" ] && printf '### after %s — %s\n```\n%s\n```\n\n' "$label" "$pg" "$out" >> "$POLLUTION_MD"
+    fi
+  done
+  return 0
+}
+reset_state() {  # between-suite reset: pollution check FIRST (evidence before erase), then API deletes
+                 # (evict caches) + clean_db (truncate DB incl temporal) + force-recreate scorpio1 (the
+                 # bulletproof in-VM clear). Order matters: DB is emptied BEFORE the restart so caches
+                 # rebuild empty. Together = a true clean slate, no leak. $1 = suite that just finished.
+  check_pollution "${1:-unknown}"
+  # NO_RESET=1 (CI): NEVER erase — no API deletes, no clean_db, no restart. State accumulates across
+  # the whole run so any pollution is visible (in the report above and as cross-suite failures)
+  # instead of being truncated away between suites. Suites are expected to clean up after themselves.
+  [ "${NO_RESET:-}" = 1 ] && return 0
   [ -x "$RESET_BROKER" ] && "$RESET_BROKER" "$B1" >/dev/null 2>&1 || true
   ./clean_db.sh >/dev/null 2>&1 || true
   restart_broker
 }
 
 rm -rf results && mkdir -p results
+printf '# DB pollution report (leftover rows found BEFORE each between-suite erase)\n\nEmpty below this line = no pollution anywhere.\n\n' > "$POLLUTION_MD"
+prev="(pre-run stack bring-up)"
 for s in CommonBehaviours \
          ContextInformation/Consumption ContextInformation/Provision ContextInformation/Subscription \
          ContextSource jsonldContext; do
-  reset_state
+  reset_state "$prev"
   name="${s//\//-}"
   $ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir "results/$name" "./TP/NGSI-LD/$s"; rc=$?
   stop_if_failed "$rc" "$s" "results/$name"
+  prev="$s"
 done
 
 # DistributedOperations: broker1 is the SUT, the other brokers are federated context sources.
-reset_state
+reset_state "$prev"
 $ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir results/DistributedOperations ./TP/NGSI-LD/DistributedOperations; rc=$?
 stop_if_failed "$rc" DistributedOperations results/DistributedOperations
 
-# IOP: exercises all five brokers (self-resetting suite).
+# IOP: exercises all five brokers (self-resetting suite — FederationReset erases via the API in its
+# own Suite Setup, so record DistributedOperations leftovers before it runs).
+check_pollution "DistributedOperations"
 $ROBOT "${DBG[@]}" --variable b1_url:"$B1" --variable b2_url:"$B2" --variable b3_url:"$B3" \
        --variable b4_url:"$B4" --variable b5_url:"$B5" --outputdir results/IOP IOP_TP; rc=$?
 stop_if_failed "$rc" IOP results/IOP
+# Final check AFTER IOP's own API self-reset: anything still here is state the NGSI-LD API cannot
+# clean — the strongest pollution signal (broker leak, not a test-teardown gap).
+check_pollution "IOP (post API self-reset — API-resistant rows)"
 
 # ---- Unified output (IDENTICAL for local and CI) -------------------------------------------------
 # 1) ONE combined report: merge every suite's output.xml into results/{output.xml,report.html,log.html}.
@@ -147,3 +189,4 @@ python3 report_failures.py 'results/*/output.xml' etsi-failures.md || true
 echo "=== ETSI serial run complete ==="
 echo "  full report : $SUITE/results/report.html  (+ output.xml, log.html)"
 echo "  failures    : $SUITE/etsi-failures.md"
+echo "  pollution   : $SUITE/results/pollution-report.md  (leftover DB rows per suite, pre-erase)"

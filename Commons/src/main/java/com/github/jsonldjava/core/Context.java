@@ -48,6 +48,11 @@ public class Context extends LinkedHashMap<String, Object> {
 
 	private List<String> originalAtContext;
 
+	// The @context URLs literally present in the user's top-level @context (no transitively
+	// imported sub-contexts). originalAtContext accumulates every dereferenced remote context,
+	// which is wrong for notification @context / Link headers (NGSI-LD 5.2.3 "user @context").
+	private List<String> userAtContext;
+
 	public Context() {
 		this(new JsonLdOptions());
 	}
@@ -359,6 +364,11 @@ public class Context extends LinkedHashMap<String, Object> {
 			}
 		}
 		result.setOriginalAtContext(remoteContexts);
+		if (root) {
+			// snapshot BEFORE the remote documents are dereferenced below: at this point the list
+			// holds exactly the top-level URLs. Recursive (root=false) calls must not overwrite it.
+			result.userAtContext = List.copyOf(remoteContexts);
+		}
 		if (rds.isEmpty()) {
 			return Uni.createFrom().item(result);
 		} else {
@@ -398,6 +408,13 @@ public class Context extends LinkedHashMap<String, Object> {
 			return List.of(NGSIConstants.CURRENT_CORE_CONTEXT);
 		}
 		return originalAtContext;
+	}
+
+	public List<String> getUserAtContext() {
+		if (userAtContext == null || userAtContext.isEmpty()) {
+			return getOriginalAtContext();
+		}
+		return userAtContext;
 	}
 
 	public boolean dontAddCoreContext() {

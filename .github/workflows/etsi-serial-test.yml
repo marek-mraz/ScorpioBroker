@@ -2,6 +2,11 @@ name: Build and ETSI Test (Serial)
 
 on:
   workflow_dispatch: # Manual trigger only
+    inputs:
+      no_reset:
+        description: "Diagnostic: never erase DBs between suites (pollution persists; expect cross-suite false failures + by-design temporal accumulation; publish gate will likely block)"
+        type: boolean
+        default: false
 
 # Single environment, identical to local `dev/etsi-serial.sh`: the 5-broker stack
 # compose-files/docker-compose-iop.yml (each broker = its own postgres + kafka + mqtt), built from
@@ -11,6 +16,9 @@ jobs:
   build-and-test-serial:
     name: Build & Run ETSI Tests (5-broker stack)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # publish the ETSI-green image to GHCR
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -43,6 +51,11 @@ jobs:
           B4: http://host.docker.internal:9084/ngsi-ld/v1
           B5: http://host.docker.internal:9085/ngsi-ld/v1
           CALLBACK_HOST: host.docker.internal
+          # Default: reset between suites (isolation makes green meaningful), but ALWAYS record
+          # leftover rows BEFORE each erase in results/pollution-report.md — pollution stays visible
+          # without sacrificing isolation. Dispatch with no_reset=true for a diagnostic run that
+          # never erases (state persists end-to-end; expect false failures, publish likely blocked).
+          NO_RESET: ${{ inputs.no_reset && '1' || '' }}
         run: |
           # Brings up compose-files/docker-compose-iop.yml (build from source) and runs every suite
           # serially — exactly what `dev/etsi-serial.sh` does locally, so results match.
@@ -56,10 +69,65 @@ jobs:
           # run page instead of only inside the artifact zip.
           if [ -s ngsi-ld-test-suite/etsi-failures.md ]; then
             cat ngsi-ld-test-suite/etsi-failures.md >> "$GITHUB_STEP_SUMMARY"
+            # DB pollution report: leftover rows captured BEFORE each between-suite erase, so
+            # polluted state is visible in CI instead of being silently truncated away.
+            cat ngsi-ld-test-suite/results/pollution-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           else
             echo "No etsi-failures.md produced — the suite likely did not run; check the logs." >> "$GITHUB_STEP_SUMMARY"
             docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
           fi
+
+      # Publish gate: 100% green means EVERY suite produced results AND zero failed, zero skipped,
+      # zero robot execution errors. A missing/empty output.xml (crashed run) is NOT green — absence
+      # of failures is not proof of success. The gate never fails the job (non-gating by design);
+      # it only decides whether the image is published.
+      - name: Gate — verify the run is 100% green
+        id: gate
+        run: |
+          python3 - <<'EOF'
+          import os, sys, xml.etree.ElementTree as ET
+          expected = ["CommonBehaviours", "ContextInformation-Consumption",
+                      "ContextInformation-Provision", "ContextInformation-Subscription",
+                      "ContextSource", "jsonldContext", "DistributedOperations", "IOP"]
+          problems, total = [], 0
+          for name in expected:
+              path = f"ngsi-ld-test-suite/results/{name}/output.xml"
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception as e:
+                  problems.append(f"{name}: no readable output.xml ({e})"); continue
+              stat = root.find("./statistics/total/stat")
+              p, f, s = (int(stat.get(k, "0")) for k in ("pass", "fail", "skip"))
+              errs = len(root.findall("./errors/msg[@level='ERROR']"))
+              for cond, msg in [(f, f"{f} FAILED"), (s, f"{s} SKIPPED"),
+                                (errs, f"{errs} robot execution ERROR(s)"),
+                                (p == 0, "0 tests passed — suite did not run")]:
+                  if cond: problems.append(f"{name}: {msg}")
+              total += p
+          green = not problems
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"green={str(green).lower()}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              if green:
+                  out.write(f"\n## Publish gate: GREEN — {total} tests passed, 0 failed, "
+                            f"all {len(expected)} suites ran. Image will be published.\n")
+              else:
+                  out.write("\n## Publish gate: NOT green — image NOT published\n")
+                  out.writelines(f"- {p}\n" for p in problems)
+          print(("ALL GREEN" if green else "NOT GREEN"), *problems, sep="\n")
+          EOF
+
+      - name: Publish the ETSI-green image to GHCR
+        if: steps.gate.outputs.green == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          IMG=ghcr.io/${{ github.repository_owner }}/scorpio-broker
+          # Push the EXACT image the suite just tested (built from this checkout by run-iop.sh).
+          docker tag scorpio-local:latest "$IMG:${GITHUB_SHA::7}"
+          docker tag scorpio-local:latest "$IMG:latest"
+          docker push "$IMG:${GITHUB_SHA::7}"
+          docker push "$IMG:latest"
+          echo -e "\n## Published: \`$IMG:${GITHUB_SHA::7}\` + \`$IMG:latest\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tear the stack down
         if: always()

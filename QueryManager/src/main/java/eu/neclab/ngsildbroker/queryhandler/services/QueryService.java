@@ -1689,7 +1689,11 @@ public class QueryService implements CSourceHandler {
 				}
 				tenant2CId2RegEntries.put(req.getTenant(), req.getId(), newRegs);
 			}
-			return Uni.createFrom().voidItem();
+			// Stored entityMaps encode the distributed query plan of the PREVIOUS registration
+			// set; a later query re-finding one via query_checksum would repull with stale hosts
+			// and lose aux-vs-inclusive precedence (IOP_CNF_03_01). Invalidate them.
+			return queryDAO.deleteAllEntityMaps(req.getTenant()).onFailure()
+					.recoverWithItem((Void) null);
 		});
 	}
 

@@ -10,7 +10,7 @@ services:
   # DEVELOPMENT & TESTING DEPENDENCIES (For Local Java Dev)
   # ---------------------------------------------------------
   postgres:
-    image: imresamu/postgis:16-3.5
+    image: postgis/postgis:18-3.6
     container_name: scorpio-postgres
     ports:
       - "5432:5432"
