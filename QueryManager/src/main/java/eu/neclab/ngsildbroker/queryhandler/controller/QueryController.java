@@ -26,10 +26,8 @@ import jakarta.ws.rs.QueryParam;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.annotation.ConcurrentGauge;
-import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.Timed;
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,9 +100,9 @@ public class QueryController {
 	 */
 	@Path("/entities/{entityId}")
 	@GET
-	@Counted(name = "entity_retrieve_total", description = "Total number of entity retrieve requests", absolute = true)
-	@Timed(name = "entity_retrieve_duration", description = "Duration of entity retrieve requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_retrieve_concurrent", description = "Number of concurrent entity retrieve requests", absolute = true)
+	@Counted(value = "entity_retrieve_total", description = "Total number of entity retrieve requests")
+	@Timed(value = "entity_retrieve_duration", description = "Duration of entity retrieve requests")
+	@Timed(value = "entity_retrieve_concurrent", longTask = true, description = "Number of concurrent entity retrieve requests")
 	public Uni<RestResponse<Object>> getEntity(HttpServerRequest request, @QueryParam(value = "attrs") String attrs,
 			@QueryParam(value = "options") String options, @QueryParam(value = "lang") String lang,
 			@QueryParam(value = "geometryProperty") String geometryProperty,
@@ -155,9 +153,9 @@ public class QueryController {
 
 	@Path("/entities")
 	@GET
-	@Counted(name = "entity_queries_total", description = "Total number of entity query requests", absolute = true)
-	@Timed(name = "entity_query_duration", description = "Duration of entity query requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_queries_concurrent", description = "Number of concurrent entity query requests", absolute = true)
+	@Counted(value = "entity_queries_total", description = "Total number of entity query requests")
+	@Timed(value = "entity_query_duration", description = "Duration of entity query requests")
+	@Timed(value = "entity_queries_concurrent", longTask = true, description = "Number of concurrent entity query requests")
 	public Uni<RestResponse<Object>> query(HttpServerRequest request,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_ID) String id,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_TYPE) String typeQuery,
@@ -254,9 +252,9 @@ public class QueryController {
 
 	@Path("/types")
 	@GET
-	@Counted(name = "types_total", description = "Total number of types requests", absolute = true)
-	@Timed(name = "types_duration", description = "Duration of types requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "types_concurrent", description = "Number of concurrent types requests", absolute = true)
+	@Counted(value = "types_total", description = "Total number of types requests")
+	@Timed(value = "types_duration", description = "Duration of types requests")
+	@Timed(value = "types_concurrent", longTask = true, description = "Number of concurrent types requests")
 	public Uni<RestResponse<Object>> getAllTypes(HttpServerRequest request,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_DETAILS) String detailsS,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_LOCAL_ONLY) String localOnlyS,
@@ -302,9 +300,9 @@ public class QueryController {
 
 	@Path("/types/{entityType}")
 	@GET
-	@Counted(name = "types_type_total", description = "Total number of type requests", absolute = true)
-	@Timed(name = "types_type_duration", description = "Duration of type requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "types_type_concurrent", description = "Number of concurrent type requests", absolute = true)
+	@Counted(value = "types_type_total", description = "Total number of type requests")
+	@Timed(value = "types_type_duration", description = "Duration of type requests")
+	@Timed(value = "types_type_concurrent", longTask = true, description = "Number of concurrent type requests")
 	public Uni<RestResponse<Object>> getType(HttpServerRequest request, @PathParam("entityType") String type,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_LOCAL_ONLY) String localOnlyS) {
 		logger.debug("getType");
@@ -336,9 +334,9 @@ public class QueryController {
 
 	@Path("/attributes")
 	@GET
-	@Counted(name = "attributes_total", description = "Total number of attributes requests", absolute = true)
-	@Timed(name = "attributes_duration", description = "Duration of attributes requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "attributes_concurrent", description = "Number of concurrent attributes requests", absolute = true)
+	@Counted(value = "attributes_total", description = "Total number of attributes requests")
+	@Timed(value = "attributes_duration", description = "Duration of attributes requests")
+	@Timed(value = "attributes_concurrent", longTask = true, description = "Number of concurrent attributes requests")
 	public Uni<RestResponse<Object>> getAllAttributes(HttpServerRequest request,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_DETAILS) String detailsS,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_LOCAL_ONLY) String localOnlyS) {
@@ -377,9 +375,9 @@ public class QueryController {
 
 	@Path("/attributes/{attribute}")
 	@GET
-	@Counted(name = "attributes_attribute_total", description = "Total number of attribute requests", absolute = true)
-	@Timed(name = "attributes_attribute_duration", description = "Duration of attribute requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "attributes_attribute_concurrent", description = "Number of concurrent attribute requests", absolute = true)
+	@Counted(value = "attributes_attribute_total", description = "Total number of attribute requests")
+	@Timed(value = "attributes_attribute_duration", description = "Duration of attribute requests")
+	@Timed(value = "attributes_attribute_concurrent", longTask = true, description = "Number of concurrent attribute requests")
 	public Uni<RestResponse<Object>> getAttribute(HttpServerRequest request, @PathParam("attribute") String attribute,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_DETAILS) String detailsS,
 			@QueryParam(NGSIConstants.QUERY_PARAMETER_LOCAL_ONLY) String localOnlyS) {
@@ -416,9 +414,9 @@ public class QueryController {
 
 	@Path("/entityMap")
 	@GET
-	@Counted(name = "entity_map_create_total", description = "Total number of entitymap create requests", absolute = true)
-	@Timed(name = "entity_map_create_duration", description = "Duration of entitymap create requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_map_create_concurrent", description = "Number of concurrent entitymap create requests", absolute = true)
+	@Counted(value = "entity_map_create_total", description = "Total number of entitymap create requests")
+	@Timed(value = "entity_map_create_duration", description = "Duration of entitymap create requests")
+	@Timed(value = "entity_map_create_concurrent", longTask = true, description = "Number of concurrent entitymap create requests")
 	public Uni<RestResponse<Object>> queryEntityMap(HttpServerRequest request, @QueryParam("id") String id,
 			@QueryParam("type") String typeQuery, @QueryParam("idPattern") String idPattern,
 			@QueryParam("attrs") String attrs, @QueryParam("q") String qInput, @QueryParam("csf") String csf,
@@ -463,9 +461,9 @@ public class QueryController {
 
 	@Path("/entityMap/{entityMapId}")
 	@GET
-	@Counted(name = "entity_map_retrieve_total", description = "Total number of entitymap retrieve requests", absolute = true)
-	@Timed(name = "entity_map_retrieve_duration", description = "Duration of entitymap retrieve requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_map_retrieve_concurrent", description = "Number of concurrent entitymap retrieve requests", absolute = true)
+	@Counted(value = "entity_map_retrieve_total", description = "Total number of entitymap retrieve requests")
+	@Timed(value = "entity_map_retrieve_duration", description = "Duration of entitymap retrieve requests")
+	@Timed(value = "entity_map_retrieve_concurrent", longTask = true, description = "Number of concurrent entitymap retrieve requests")
 	public Uni<RestResponse<Object>> getEntityMap(HttpServerRequest request,
 			@PathParam("entityMapId") String entityMapId) {
 		logger.debug("getEntityMap");
@@ -478,9 +476,9 @@ public class QueryController {
 
 	@Path("/entityMap/{entityMapId}")
 	@DELETE
-	@Counted(name = "entity_map_delete_total", description = "Total number of entitymap delete requests", absolute = true)
-	@Timed(name = "entity_map_delete_duration", description = "Duration of entitymap delete requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_map_delete_concurrent", description = "Number of concurrent entitymap delete requests", absolute = true)
+	@Counted(value = "entity_map_delete_total", description = "Total number of entitymap delete requests")
+	@Timed(value = "entity_map_delete_duration", description = "Duration of entitymap delete requests")
+	@Timed(value = "entity_map_delete_concurrent", longTask = true, description = "Number of concurrent entitymap delete requests")
 	public Uni<RestResponse<Object>> deleteEntityMap(HttpServerRequest request,
 			@PathParam("entityMapId") String entityMapId) {
 		logger.debug("deleteEntityMap");
@@ -493,9 +491,9 @@ public class QueryController {
 
 	@Path("/entityMap/{entityMapId}")
 	@PATCH
-	@Counted(name = "entity_map_patch_total", description = "Total number of entitymap patch requests", absolute = true)
-	@Timed(name = "entity_map_patch_duration", description = "Duration of entitymap patch requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_map_patch_concurrent", description = "Number of concurrent entitymap patch requests", absolute = true)
+	@Counted(value = "entity_map_patch_total", description = "Total number of entitymap patch requests")
+	@Timed(value = "entity_map_patch_duration", description = "Duration of entitymap patch requests")
+	@Timed(value = "entity_map_patch_concurrent", longTask = true, description = "Number of concurrent entitymap patch requests")
 	public Uni<RestResponse<Object>> updateEntityMap(HttpServerRequest request, String bodyStr,
 			@PathParam("entityMapId") String entityMapId) {
 		logger.debug("updateEntityMap");

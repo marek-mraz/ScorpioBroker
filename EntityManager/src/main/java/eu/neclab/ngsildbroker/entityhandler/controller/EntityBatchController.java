@@ -18,10 +18,8 @@ import jakarta.ws.rs.QueryParam;
 import eu.neclab.ngsildbroker.commons.datatypes.ViaHeaders;
 import eu.neclab.ngsildbroker.commons.datatypes.results.NGSILDOperationResult;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.annotation.ConcurrentGauge;
-import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.Timed;
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import org.jboss.resteasy.reactive.RestResponse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -79,9 +77,9 @@ public class EntityBatchController {
 
 	@POST
 	@Path("/create")
-	@Counted(name = "entity_batch_create_total", description = "Total number of entity batch create requests", absolute = true)
-	@Timed(name = "entity_batch_create_duration", description = "Duration of entity batch create requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_batch_create_concurrent", description = "Number of concurrent entity batch create requests", absolute = true)
+	@Counted(value = "entity_batch_create_total", description = "Total number of entity batch create requests")
+	@Timed(value = "entity_batch_create_duration", description = "Duration of entity batch create requests")
+	@Timed(value = "entity_batch_create_concurrent", longTask = true, description = "Number of concurrent entity batch create requests")
 	public Uni<RestResponse<Object>> createMultiple(HttpServerRequest request, String body,
 			@QueryParam("localOnly") String localOnlyS) {
 		List<Uni<Tuple2<String, Object>>> unis = Lists.newArrayList();
@@ -168,9 +166,9 @@ public class EntityBatchController {
 
 	@POST
 	@Path("/upsert")
-	@Counted(name = "entity_batch_upsert_total", description = "Total number of entity batch upsert requests", absolute = true)
-	@Timed(name = "entity_batch_upsert_duration", description = "Duration of entity batch upsert requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_batch_upsert_concurrent", description = "Number of concurrent entity batch upsert requests", absolute = true)
+	@Counted(value = "entity_batch_upsert_total", description = "Total number of entity batch upsert requests")
+	@Timed(value = "entity_batch_upsert_duration", description = "Duration of entity batch upsert requests")
+	@Timed(value = "entity_batch_upsert_concurrent", longTask = true, description = "Number of concurrent entity batch upsert requests")
 	public Uni<RestResponse<Object>> upsertMultiple(HttpServerRequest request, String body,
 			@QueryParam(value = "options") String options, @QueryParam("localOnly") String localOnlyS) {
 		boolean localOnly;
@@ -265,9 +263,9 @@ public class EntityBatchController {
 	 */
 	@POST
 	@Path("/update")
-	@Counted(name = "entity_batch_update_total", description = "Total number of entity batch update requests", absolute = true)
-	@Timed(name = "entity_batch_update_duration", description = "Duration of entity batch update requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_batch_update_concurrent", description = "Number of concurrent entity batch update requests", absolute = true)
+	@Counted(value = "entity_batch_update_total", description = "Total number of entity batch update requests")
+	@Timed(value = "entity_batch_update_duration", description = "Duration of entity batch update requests")
+	@Timed(value = "entity_batch_update_concurrent", longTask = true, description = "Number of concurrent entity batch update requests")
 	public Uni<RestResponse<Object>> appendMultiple(HttpServerRequest request, String body,
 			@QueryParam(value = "options") String options, @QueryParam("localOnly") String localOnlyS) {
 		List<Map<String, Object>> compactedEntities;
@@ -348,9 +346,9 @@ public class EntityBatchController {
 
 	@POST
 	@Path("/delete")
-	@Counted(name = "entity_batch_delete_total", description = "Total number of entity batch delete requests", absolute = true)
-	@Timed(name = "entity_batch_delete_duration", description = "Duration of entity batch delete requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_batch_delete_concurrent", description = "Number of concurrent entity batch delete requests", absolute = true)
+	@Counted(value = "entity_batch_delete_total", description = "Total number of entity batch delete requests")
+	@Timed(value = "entity_batch_delete_duration", description = "Duration of entity batch delete requests")
+	@Timed(value = "entity_batch_delete_concurrent", longTask = true, description = "Number of concurrent entity batch delete requests")
 	public Uni<RestResponse<Object>> deleteMultiple(HttpServerRequest request, String entityIdsStr,
 			@QueryParam("localOnly") String localOnlyS) {
 		String tenant = HttpUtils.getTenant(request);
@@ -386,9 +384,9 @@ public class EntityBatchController {
 
 	@POST
 	@Path("/merge")
-	@Counted(name = "entity_batch_merge_total", description = "Total number of entity batch merge requests", absolute = true)
-	@Timed(name = "entity_batch_merge_duration", description = "Duration of entity batch merge requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "entity_batch_merge_concurrent", description = "Number of concurrent entity batch merge requests", absolute = true)
+	@Counted(value = "entity_batch_merge_total", description = "Total number of entity batch merge requests")
+	@Timed(value = "entity_batch_merge_duration", description = "Duration of entity batch merge requests")
+	@Timed(value = "entity_batch_merge_concurrent", longTask = true, description = "Number of concurrent entity batch merge requests")
 	public Uni<RestResponse<Object>> mergeMultiple(HttpServerRequest request, String body,
 			@QueryParam(value = "options") String options, @QueryParam("localOnly") String localOnlyS) {
 		List<Map<String, Object>> compactedEntities;

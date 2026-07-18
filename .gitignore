@@ -25,7 +25,7 @@ repomix-output.md
 repomix.config.json
 scorpiobroker.code-workspace
 scorpiobroker.code-workspace
-.claude/loop.md
+.claude/
 
 pdf-rag
 
@@ -34,5 +34,3 @@ pdf-rag
 /*/helm/
 error.md
 .DS_Store
-.claude/settings.json
-.claude/skills/java-development/SKILL.md

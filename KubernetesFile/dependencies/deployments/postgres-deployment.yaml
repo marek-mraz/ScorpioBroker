@@ -24,14 +24,14 @@ spec:
           value: ngb
         - name: POSTGRES_USER
           value: ngb
-        image: mdillon/postgis
+        image: postgis/postgis:18-3.6
         imagePullPolicy: ""
         name: postgres
         ports:
         - containerPort: 5432
         resources: {}
         volumeMounts:
-        - mountPath: /var/lib/postgresql/data
+        - mountPath: /var/lib/postgresql
           name: postgredb
       restartPolicy: Always
       serviceAccountName: ""

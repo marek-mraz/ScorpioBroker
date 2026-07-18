@@ -1,0 +1,55 @@
+# Smoke-test the published prod image against the newest PostGIS.
+#   docker compose -f compose-files/docker-compose-test-prod-image.yml up --pull always
+#   curl http://localhost:9090/ngsi-ld/v1/entities?type=Test
+# Tear down (incl. data): docker compose -f compose-files/docker-compose-test-prod-image.yml down -v
+
+# explicit project name so the network is scorpio-prod-test_default, not compose-files_default
+# (that one exists unlabeled — created by dev/run-iop.sh — and compose refuses to adopt it)
+name: scorpio-prod-test
+
+services:
+  postgres:
+    image: postgis/postgis:latest
+    # official postgis + the ghcr scorpio image are amd64-only; Rosetta runs them on Apple Silicon
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ngb
+      POSTGRES_PASSWORD: ngb
+      POSTGRES_DB: ngb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - 5432:5432
+
+  # prod image is built with the kafka messaging profile (see dev/build-image.sh) -> kafka required
+  kafka:
+    image: apache/kafka:3.8.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+  scorpio:
+    image: ghcr.io/marek-mraz/scorpio-broker:latest
+    platform: linux/amd64
+    pull_policy: always
+    ports: ["9090:9090"]
+    environment:
+      DBHOST: postgres
+      BUSHOST: kafka
+      SCORPIO_STARTUPDELAY: 15s
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_started }

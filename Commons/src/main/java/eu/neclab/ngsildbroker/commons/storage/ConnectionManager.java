@@ -319,7 +319,7 @@ public class ConnectionManager {
 
 	public Boolean flywayValidateAndMigrate(DataSource tenantDataSource, String tenant, String tenantDatabaseName) {
 		FlywayContainerProducer flywayProducer = Arc.container().instance(FlywayContainerProducer.class).get();
-		FlywayContainer flywayContainer = flywayProducer.createFlyway(tenantDataSource, "<default>", true, true);
+		FlywayContainer flywayContainer = flywayProducer.createFlyway(tenantDataSource, "<default>", true, true, java.util.Set.of());
 		Flyway flyway = Flyway.configure()
 				.configuration(flywayContainer.getFlyway().getConfiguration())
 				.validateOnMigrate(flywayValidateOnMigrate)

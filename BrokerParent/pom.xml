@@ -8,23 +8,23 @@
 	<version>7.0.0</version>
 	<packaging>pom</packaging>
 	<properties>
-		<compiler-plugin.version>3.14.0</compiler-plugin.version>
-		<spotbugs-plugin.version>4.9.6.0</spotbugs-plugin.version>
-		<findsecbugs.version>1.13.0</findsecbugs.version>
+		<compiler-plugin.version>3.15.0</compiler-plugin.version>
+		<spotbugs-plugin.version>4.10.3.0</spotbugs-plugin.version>
+		<findsecbugs.version>1.14.0</findsecbugs.version>
 		<!-- SpotBugs gate temporarily DISABLED by default (re-enable with -Dspotbugs.skip=false).
 		     When on, onlyAnalyze restricts it to our own code (eu.neclab.ngsildbroker.*); vendored
 		     third-party sources (e.g. com.github.jsonldjava) are not analyzed. -->
 		<spotbugs.skip>true</spotbugs.skip>
-		<errorprone.version>2.43.0</errorprone.version>
-		<nullaway.version>0.13.0</nullaway.version>
+		<errorprone.version>2.50.0</errorprone.version>
+		<nullaway.version>0.13.7</nullaway.version>
 		<failsafe.useModulePath>false</failsafe.useModulePath>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
 		<quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-		<quarkus.platform.version>3.28.4</quarkus.platform.version>
-		<surefire-plugin.version>3.5.3</surefire-plugin.version>
+		<quarkus.platform.version>3.37.3</quarkus.platform.version>
+		<surefire-plugin.version>3.5.6</surefire-plugin.version>
 		<java.version>21</java.version>
 		<maven.compiler.source>${java.version}</maven.compiler.source>
 		<maven.compiler.target>${java.version}</maven.compiler.target>
@@ -96,7 +96,7 @@
 			<plugin>
 				<groupId>io.smallrye</groupId>
 				<artifactId>jandex-maven-plugin</artifactId>
-				<version>3.5.0</version>
+				<version>3.6.0</version>
 				<executions>
 					<execution>
 						<id>make-index</id>
@@ -120,6 +120,18 @@
 	</build>
 	<dependencyManagement>
 		<dependencies>
+			<!-- CVE pins above the Quarkus BOM versions; drop once the platform ships them.
+			     jackson-databind 2.22.1 = CVE-2026-54515, opentelemetry-api 1.62.0 = CVE-2026-45292 -->
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+				<version>2.22.1</version>
+			</dependency>
+			<dependency>
+				<groupId>io.opentelemetry</groupId>
+				<artifactId>opentelemetry-api</artifactId>
+				<version>1.62.0</version>
+			</dependency>
 			<dependency>
 				<groupId>${quarkus.platform.group-id}</groupId>
 				<artifactId>${quarkus.platform.artifact-id}</artifactId>
@@ -234,7 +246,7 @@
 		</dependency>
 		<dependency>
 			<groupId>io.quarkus</groupId>
-			<artifactId>quarkus-smallrye-metrics</artifactId>
+			<artifactId>quarkus-micrometer-registry-prometheus</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>io.quarkus</groupId>
@@ -243,7 +255,7 @@
 		<dependency>
 			<groupId>io.quarkiverse.loggingmanager</groupId>
 			<artifactId>quarkus-logging-manager</artifactId>
-			<version>3.4.1</version>
+			<version>3.4.2</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -339,7 +351,7 @@
 				<dependency>
 					<groupId>io.netty</groupId>
 					<artifactId>netty-resolver-dns-native-macos</artifactId>
-					<version>4.2.6.Final</version>
+					<version>4.2.16.Final</version>
 					<scope>runtime</scope>
 				</dependency>
 			</dependencies>

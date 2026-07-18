@@ -18,10 +18,8 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.annotation.ConcurrentGauge;
-import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.Timed;
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,9 +69,9 @@ public class RegistryController {
 	JsonLDService ldService;
 
 	@GET
-	@Counted(name = "registration_query_total", description = "Total number of registration query requests", absolute = true)
-	@Timed(name = "registration_query_duration", description = "Duration of registration query requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "registration_query_concurrent", description = "Number of concurrent registration query requests", absolute = true)
+	@Counted(value = "registration_query_total", description = "Total number of registration query requests")
+	@Timed(value = "registration_query_duration", description = "Duration of registration query requests")
+	@Timed(value = "registration_query_concurrent", longTask = true, description = "Number of concurrent registration query requests")
 	public Uni<RestResponse<Object>> queryCSource(HttpServerRequest request, @QueryParam("id") String ids,
 			@QueryParam("type") String type, @QueryParam("idPattern") String idPattern,
 			@QueryParam("attrs") String attrs, @QueryParam("q") String q, @QueryParam("csf") String csf,
@@ -151,9 +149,9 @@ public class RegistryController {
 	}
 
 	@POST
-	@Counted(name = "registration_create_total", description = "Total number of registration create requests", absolute = true)
-	@Timed(name = "registration_create_duration", description = "Duration of registration create requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "registration_create_concurrent", description = "Number of concurrent registration create requests", absolute = true)
+	@Counted(value = "registration_create_total", description = "Total number of registration create requests")
+	@Timed(value = "registration_create_duration", description = "Duration of registration create requests")
+	@Timed(value = "registration_create_concurrent", longTask = true, description = "Number of concurrent registration create requests")
 	public Uni<RestResponse<Object>> registerCSource(HttpServerRequest request, String payload) {
 		JsonObject jsonObject;
 		try {
@@ -189,9 +187,9 @@ public class RegistryController {
 
 	@Path("/{registrationId}")
 	@GET
-	@Counted(name = "registration_retrieve_total", description = "Total number of registration retrieve requests", absolute = true)
-	@Timed(name = "registration_retrieve_duration", description = "Duration of registration retrieve requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "registration_retrieve_concurrent", description = "Number of concurrent registration retrieve requests", absolute = true)
+	@Counted(value = "registration_retrieve_total", description = "Total number of registration retrieve requests")
+	@Timed(value = "registration_retrieve_duration", description = "Duration of registration retrieve requests")
+	@Timed(value = "registration_retrieve_concurrent", longTask = true, description = "Number of concurrent registration retrieve requests")
 	public Uni<RestResponse<Object>> getCSourceById(HttpServerRequest request,
 			@PathParam("registrationId") String registrationId) {
 		logger.debug("get CSource() ::" + registrationId);
@@ -217,9 +215,9 @@ public class RegistryController {
 
 	@Path("/{registrationId}")
 	@PATCH
-	@Counted(name = "registration_patch_total", description = "Total number of registration patch requests", absolute = true)
-	@Timed(name = "registration_patch_duration", description = "Duration of registration patch requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "registration_patch_concurrent", description = "Number of concurrent registration patch requests", absolute = true)
+	@Counted(value = "registration_patch_total", description = "Total number of registration patch requests")
+	@Timed(value = "registration_patch_duration", description = "Duration of registration patch requests")
+	@Timed(value = "registration_patch_concurrent", longTask = true, description = "Number of concurrent registration patch requests")
 	public Uni<RestResponse<Object>> updateCSource(HttpServerRequest request,
 			@PathParam("registrationId") String registrationId, String payload) {
 		// NGSI-LD 5.9.x: a member set to null in a registration update means "remove this member".
@@ -259,9 +257,9 @@ public class RegistryController {
 
 	@Path("/{registrationId}")
 	@DELETE
-	@Counted(name = "registration_delete_total", description = "Total number of registration delete requests", absolute = true)
-	@Timed(name = "registration_delete_duration", description = "Duration of registration delete requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "registration_delete_concurrent", description = "Number of concurrent registration delete requests", absolute = true)
+	@Counted(value = "registration_delete_total", description = "Total number of registration delete requests")
+	@Timed(value = "registration_delete_duration", description = "Duration of registration delete requests")
+	@Timed(value = "registration_delete_concurrent", longTask = true, description = "Number of concurrent registration delete requests")
 	public Uni<RestResponse<Object>> deleteCSource(HttpServerRequest request,
 			@PathParam("registrationId") String registrationId) {
 		int acceptHeader = HttpUtils.parseAcceptHeader(request.headers().getAll("Accept"));

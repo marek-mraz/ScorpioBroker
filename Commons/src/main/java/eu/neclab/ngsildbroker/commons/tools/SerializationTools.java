@@ -13,7 +13,6 @@ import java.util.Map.Entry;
 import java.util.function.Consumer;
 
 //import com.github.filosganga.geogson.gson.GeometryAdapterFactory;
-import com.github.filosganga.geogson.model.Coordinates;
 import com.github.filosganga.geogson.model.Geometry;
 import com.github.filosganga.geogson.model.LineString;
 import com.github.filosganga.geogson.model.Point;
@@ -21,7 +20,6 @@ import com.github.filosganga.geogson.model.Polygon;
 import com.github.filosganga.geogson.model.positions.AreaPositions;
 import com.github.filosganga.geogson.model.positions.LinearPositions;
 import com.github.filosganga.geogson.model.positions.SinglePosition;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.gson.JsonParseException;
@@ -436,7 +434,7 @@ public class SerializationTools {
 		for (Map<String, Object> entry : list) {
 			coordinateList.add(getSingeLePosition((List<Map<String, Object>>) entry.get(NGSIConstants.JSON_LD_LIST)));
 		}
-		return new LinearPositions(ImmutableList.copyOf(coordinateList));
+		return LinearPositions.builder().addSinglePositions(coordinateList).build();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -446,15 +444,15 @@ public class SerializationTools {
 		for (Map<String, Object> entry : list) {
 			coordinateList.add(getLinearPositions((List<Map<String, Object>>) entry.get(NGSIConstants.JSON_LD_LIST)));
 		}
-		return new AreaPositions(coordinateList);
+		return AreaPositions.builder().addLinearPositions(coordinateList).build();
 	}
 
 	@SuppressWarnings("unchecked")
 	private static SinglePosition getSingeLePosition(List<Map<String, Object>> coordinates) {
 		List<Map<String, Object>> list = (List<Map<String, Object>>) coordinates.get(0).get(NGSIConstants.JSON_LD_LIST);
-		return new SinglePosition(Coordinates.of(
+		return new SinglePosition(
 				getProperLon(Double.parseDouble(list.get(0).get(NGSIConstants.JSON_LD_VALUE).toString())),
-				getProperLat(Double.parseDouble(list.get(1).get(NGSIConstants.JSON_LD_VALUE).toString()))));
+				getProperLat(Double.parseDouble(list.get(1).get(NGSIConstants.JSON_LD_VALUE).toString())), Double.NaN);
 	}
 
 	public static double getProperLat(double lat) {

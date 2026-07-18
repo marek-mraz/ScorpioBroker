@@ -25,7 +25,7 @@
 		<dependency>
 			<groupId>org.locationtech.jts</groupId>
 			<artifactId>jts-core</artifactId>
-			<version>1.18.2</version>
+			<version>1.20.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.noggit</groupId>
@@ -43,12 +43,12 @@
 		<dependency>
 			<groupId>com.github.filosganga</groupId>
 			<artifactId>geogson-core</artifactId>
-			<version>1.2.21</version>
+			<version>1.4.31</version>
 		</dependency>
 		<dependency>
 			<groupId>com.github.filosganga</groupId>
 			<artifactId>geogson-jts</artifactId>
-			<version>1.2.21</version>
+			<version>1.4.31</version>
 		</dependency>
 		<dependency>
 			<groupId>commons-io</groupId>

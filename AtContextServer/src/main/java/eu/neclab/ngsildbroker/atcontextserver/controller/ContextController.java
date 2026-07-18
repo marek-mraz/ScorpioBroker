@@ -13,10 +13,8 @@ import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
 
 import org.apache.commons.lang3.StringUtils;
-import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.annotation.ConcurrentGauge;
-import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.Timed;
+import io.micrometer.core.annotation.Counted;
+import io.micrometer.core.annotation.Timed;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.RestResponse.ResponseBuilder;
 import org.slf4j.Logger;
@@ -45,9 +43,9 @@ public class ContextController {
 
 	@GET
 	@Path("{contextId}")
-	@Counted(name = "context_retrieve_total", description = "Total number of context retrieve requests", absolute = true)
-	@Timed(name = "context_retrieve_duration", description = "Duration of context retrieve requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "context_retrieve_concurrent", description = "Number of concurrent context retrieve requests", absolute = true)
+	@Counted(value = "context_retrieve_total", description = "Total number of context retrieve requests")
+	@Timed(value = "context_retrieve_duration", description = "Duration of context retrieve requests")
+	@Timed(value = "context_retrieve_concurrent", longTask = true, description = "Number of concurrent context retrieve requests")
 	public Uni<RestResponse<Object>> getContextById(@PathParam("contextId") String id,
 			@QueryParam("details") String detailsS) {
 
@@ -97,9 +95,9 @@ public class ContextController {
 	}
 
 	@POST
-	@Counted(name = "context_create_total", description = "Total number of context create requests", absolute = true)
-	@Timed(name = "context_create_duration", description = "Duration of context create requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "context_create_concurrent", description = "Number of concurrent context create requests", absolute = true)
+	@Counted(value = "context_create_total", description = "Total number of context create requests")
+	@Timed(value = "context_create_duration", description = "Duration of context create requests")
+	@Timed(value = "context_create_concurrent", longTask = true, description = "Number of concurrent context create requests")
 	public Uni<RestResponse<Object>> createContext(String body) {
 
 		Map<String, Object> context;
@@ -123,9 +121,9 @@ public class ContextController {
 
 	@DELETE
 	@Path("{contextId}")
-	@Counted(name = "context_delete_total", description = "Total number of context delete requests", absolute = true)
-	@Timed(name = "context_delete_duration", description = "Duration of context delete requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "context_delete_concurrent", description = "Number of concurrent context delete requests", absolute = true)
+	@Counted(value = "context_delete_total", description = "Total number of context delete requests")
+	@Timed(value = "context_delete_duration", description = "Duration of context delete requests")
+	@Timed(value = "context_delete_concurrent", longTask = true, description = "Number of concurrent context delete requests")
 	public Uni<RestResponse<Object>> deleteContextById(@PathParam("contextId") String id,
 			@QueryParam("reload") String reloadS) {
 		boolean reload;
@@ -155,9 +153,9 @@ public class ContextController {
 
 	@GET
 	@Path("/createcache/{url}")
-	@Counted(name = "context_cache_total", description = "Total number of context cache requests", absolute = true)
-	@Timed(name = "context_cache_duration", description = "Duration of context cache requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "context_cache_concurrent", description = "Number of concurrent context cache requests", absolute = true)
+	@Counted(value = "context_cache_total", description = "Total number of context cache requests")
+	@Timed(value = "context_cache_duration", description = "Duration of context cache requests")
+	@Timed(value = "context_cache_concurrent", longTask = true, description = "Number of concurrent context cache requests")
 	public Uni<RestResponse<Object>> loadCache(@PathParam("url") String url) {
 		if (NGSIConstants.CORE_CONTEXT_URLS.contains(url)) {
 			url = AppConstants.INTERNAL_NULL_KEY;
@@ -168,9 +166,9 @@ public class ContextController {
 
 	@POST
 	@Path("/createimplicitly/")
-	@Counted(name = "context_createimplicitly_total", description = "Total number of context createimplicitly requests", absolute = true)
-	@Timed(name = "context_createimplicitly_duration", description = "Duration of context createimplicitly requests", unit = MetricUnits.MILLISECONDS, absolute = true)
-	@ConcurrentGauge(name = "context_createimplicitly_concurrent", description = "Number of concurrent context createimplicitly requests", absolute = true)
+	@Counted(value = "context_createimplicitly_total", description = "Total number of context createimplicitly requests")
+	@Timed(value = "context_createimplicitly_duration", description = "Duration of context createimplicitly requests")
+	@Timed(value = "context_createimplicitly_concurrent", longTask = true, description = "Number of concurrent context createimplicitly requests")
 	public Uni<RestResponse<Object>> createImplicitly(String payload) {
 		return JsonUtils.fromString(payload).onItem().transformToUni(json -> {
 			Map<String, Object> payloadMap = new HashMap<>();

@@ -832,7 +832,6 @@ public class SubscriptionTools {
 
 	private static Object getOverlap(Shape regShape, Shape queryShape, boolean notWithin) {
 		// no idea at the moment how to do this.
-		new com.vividsolutions.jts.geom.Polygon(null, null, null);
 		return null;
 	}
 
