@@ -8,10 +8,6 @@ on:
         type: boolean
         default: false
 
-# Single environment, identical to local `dev/etsi-serial.sh`: the 5-broker stack
-# compose-files/docker-compose-iop.yml (each broker = its own postgres + kafka + mqtt), built from
-# the working tree. Single-broker suites run against broker1; federation suites use all five. One
-# config everywhere — no separate single-broker / kafka compose.
 jobs:
   build-and-test-serial:
     name: Build & Run ETSI Tests (5-broker stack)
@@ -34,7 +30,9 @@ jobs:
           cache: 'maven'
 
       - name: Map host.docker.internal to the runner host
-        run: echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
+        run: |
+          BRIDGE_IP=$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')
+          echo "$BRIDGE_IP host.docker.internal" | sudo tee -a /etc/hosts
 
       - name: Set up Python for the suite
         run: |
@@ -51,10 +49,6 @@ jobs:
           B4: http://host.docker.internal:9084/ngsi-ld/v1
           B5: http://host.docker.internal:9085/ngsi-ld/v1
           CALLBACK_HOST: host.docker.internal
-          # Default: reset between suites (isolation makes green meaningful), but ALWAYS record
-          # leftover rows BEFORE each erase in results/pollution-report.md — pollution stays visible
-          # without sacrificing isolation. Dispatch with no_reset=true for a diagnostic run that
-          # never erases (state persists end-to-end; expect false failures, publish likely blocked).
           NO_RESET: ${{ inputs.no_reset && '1' || '' }}
         run: |
           # Brings up compose-files/docker-compose-iop.yml (build from source) and runs every suite
@@ -77,10 +71,6 @@ jobs:
             docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
           fi
 
-      # Publish gate: 100% green means EVERY suite produced results AND zero failed, zero skipped,
-      # zero robot execution errors. A missing/empty output.xml (crashed run) is NOT green — absence
-      # of failures is not proof of success. The gate never fails the job (non-gating by design);
-      # it only decides whether the image is published.
       - name: Gate — verify the run is 100% green
         id: gate
         run: |
