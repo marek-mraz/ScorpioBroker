@@ -195,12 +195,39 @@ check_pollution "IOP (post API self-reset — API-resistant rows)"
   results/*/output.xml || true
 # 2) ONE failures-only file (same generator/format everywhere): etsi-failures.md.
 python3 report_failures.py 'results/*/output.xml' etsi-failures.md || true
-# 3) RAM report: stop the sampler, write results/{memory-report.md,memory-usage.png}.
+# 3) RAM+CPU report: stop the sampler, write results/{memory-report.md,cpu-report.md,
+#    resource-summary.md,gate-status.txt,memory-usage.png}. Gate: broker RSS <= MEM_LIMIT_MB (350).
 kill "$MEM_PID" 2>/dev/null; wait "$MEM_PID" 2>/dev/null
+export MEM_LIMIT_MB="${MEM_LIMIT_MB:-350}"
 PYTHON="$(pwd)/.venv/bin/python" "$REPO/dev/mem-monitor.sh" report "$MEM_CSV" results || true
+# 4) ONE front page: results/run-summary.md = errors/passing line, resource summary,
+#    ETSI suite table, memory table, CPU table.
+python3 - <<'PYEOF' || true
+import pathlib, re
+res = pathlib.Path("results")
+fail_md = pathlib.Path("etsi-failures.md")
+fail_md = fail_md.read_text() if fail_md.exists() else ""
+m = re.search(r"^## ❌ Errors:.*$", fail_md, re.M)
+tbl = re.search(r"^\| Suite \|.*?(?=\n\n)", fail_md, re.M | re.S)
+parts = ["# ETSI run summary", "", m.group(0) if m else "## ETSI results unavailable", ""]
+rs = res / "resource-summary.md"
+if rs.exists():
+    parts += [rs.read_text().strip(), ""]
+parts += ["## ETSI test suites", "", tbl.group(0).strip() if tbl else "(no suite table)", ""]
+for f in ("memory-report.md", "cpu-report.md"):
+    p = res / f
+    if p.exists():
+        parts += [p.read_text().strip(), ""]
+(res / "run-summary.md").write_text("\n".join(parts) + "\n")
+PYEOF
 
 echo "=== ETSI serial run complete ==="
+echo "  summary     : $SUITE/results/run-summary.md  (errors + resources + all tables)"
 echo "  full report : $SUITE/results/report.html  (+ output.xml, log.html)"
 echo "  failures    : $SUITE/etsi-failures.md"
 echo "  pollution   : $SUITE/results/pollution-report.md  (leftover DB rows per suite, pre-erase)"
-echo "  RAM         : $SUITE/results/memory-report.md + memory-usage.png (per-container, whole run)"
+echo "  RAM/CPU     : $SUITE/results/memory-report.md + cpu-report.md + memory-usage.png"
+if [ "$(cat results/gate-status.txt 2>/dev/null || echo PASS)" != "PASS" ]; then
+  echo "!!! MEMORY GATE FAILED: a scorpio broker exceeded ${MEM_LIMIT_MB} MiB peak RSS — see results/run-summary.md"
+  exit 1
+fi

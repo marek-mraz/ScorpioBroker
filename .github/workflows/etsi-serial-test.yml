@@ -55,25 +55,24 @@ jobs:
           # serially — exactly what `dev/etsi-serial.sh` does locally, so results match.
           ./dev/etsi-serial.sh || true
 
-      - name: Publish failure report to the job summary
+      - name: Publish run summary + failure report to the job summary
         if: always()
         run: |
-          # etsi-serial.sh always writes etsi-failures.md (rebot-merged, failures only).
-          # The job stays green by design (|| true above) — this makes errors visible on the
-          # run page instead of only inside the artifact zip.
+          # FRONT PAGE first: run-summary.md = errors/passing line, memory+CPU short summary,
+          # ETSI suite table, memory table, CPU table (written by etsi-serial.sh).
+          cat ngsi-ld-test-suite/results/run-summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           if [ -s ngsi-ld-test-suite/etsi-failures.md ]; then
+            # Then the failures-only detail report (per-test expected vs actual).
             cat ngsi-ld-test-suite/etsi-failures.md >> "$GITHUB_STEP_SUMMARY"
             # DB pollution report: leftover rows captured BEFORE each between-suite erase, so
             # polluted state is visible in CI instead of being silently truncated away.
             cat ngsi-ld-test-suite/results/pollution-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-            # RAM stats (min/median/mean/max per container); the chart PNG is in the artifact zip.
-            cat ngsi-ld-test-suite/results/memory-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           else
             echo "No etsi-failures.md produced — the suite likely did not run; check the logs." >> "$GITHUB_STEP_SUMMARY"
             docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
           fi
 
-      - name: Gate — verify the run is 100% green
+      - name: Gate — verify the run is 100% green AND within the memory limit
         id: gate
         run: |
           python3 - <<'EOF'
@@ -96,17 +95,30 @@ jobs:
                                 (p == 0, "0 tests passed — suite did not run")]:
                   if cond: problems.append(f"{name}: {msg}")
               total += p
+          # Memory gate: etsi-serial.sh writes PASS/FAIL after comparing every scorpio broker's
+          # peak RSS against MEM_LIMIT_MB (default 350 MiB). FAIL fails this step (and the job) —
+          # the summary + artifact steps run regardless (if: always()), so the report survives.
+          try:
+              memgate = open("ngsi-ld-test-suite/results/gate-status.txt").read().strip()
+          except OSError:
+              memgate = "MISSING"
+          if memgate != "PASS":
+              problems.append(f"memory gate: {memgate} — a scorpio broker exceeded the RSS limit "
+                              "(see run-summary.md above)")
           green = not problems
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               out.write(f"green={str(green).lower()}\n")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
               if green:
                   out.write(f"\n## Publish gate: GREEN — {total} tests passed, 0 failed, "
-                            f"all {len(expected)} suites ran. Image will be published.\n")
+                            f"all {len(expected)} suites ran, memory within limit. "
+                            f"Image will be published.\n")
               else:
                   out.write("\n## Publish gate: NOT green — image NOT published\n")
                   out.writelines(f"- {p}\n" for p in problems)
           print(("ALL GREEN" if green else "NOT GREEN"), *problems, sep="\n")
+          # Only the MEMORY gate fails the job (per request): report is published either way.
+          sys.exit(1 if memgate != "PASS" else 0)
           EOF
 
       - name: Publish the ETSI-green image to GHCR
