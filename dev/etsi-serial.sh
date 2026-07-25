@@ -152,11 +152,19 @@ reset_state() {  # between-suite reset: pollution check FIRST (evidence before e
 
 rm -rf results && mkdir -p results
 printf '# DB pollution report (leftover rows found BEFORE each between-suite erase)\n\nEmpty below this line = no pollution anywhere.\n\n' > "$POLLUTION_MD"
+
+# RAM monitor: sample every scorpio-* container (brokers, kafkas, postgres, mqtt) for the whole run;
+# report (stats table + PNG chart) is generated at the end into results/.
+MEM_CSV="$(pwd)/results/memory-samples.csv"
+"$REPO/dev/mem-monitor.sh" sample "$MEM_CSV" & MEM_PID=$!
+trap 'kill $MEM_PID 2>/dev/null' EXIT
+
 prev="(pre-run stack bring-up)"
 for s in CommonBehaviours \
          ContextInformation/Consumption ContextInformation/Provision ContextInformation/Subscription \
          ContextSource jsonldContext; do
   reset_state "$prev"
+  "$REPO/dev/mem-monitor.sh" event "$MEM_CSV" "$s"
   name="${s//\//-}"
   $ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir "results/$name" "./TP/NGSI-LD/$s"; rc=$?
   stop_if_failed "$rc" "$s" "results/$name"
@@ -165,12 +173,14 @@ done
 
 # DistributedOperations: broker1 is the SUT, the other brokers are federated context sources.
 reset_state "$prev"
+"$REPO/dev/mem-monitor.sh" event "$MEM_CSV" "DistributedOperations"
 $ROBOT "${DBG[@]}" "${EXCLUDE[@]}" --outputdir results/DistributedOperations ./TP/NGSI-LD/DistributedOperations; rc=$?
 stop_if_failed "$rc" DistributedOperations results/DistributedOperations
 
 # IOP: exercises all five brokers (self-resetting suite — FederationReset erases via the API in its
 # own Suite Setup, so record DistributedOperations leftovers before it runs).
 check_pollution "DistributedOperations"
+"$REPO/dev/mem-monitor.sh" event "$MEM_CSV" "IOP"
 $ROBOT "${DBG[@]}" --variable b1_url:"$B1" --variable b2_url:"$B2" --variable b3_url:"$B3" \
        --variable b4_url:"$B4" --variable b5_url:"$B5" --outputdir results/IOP IOP_TP; rc=$?
 stop_if_failed "$rc" IOP results/IOP
@@ -185,8 +195,12 @@ check_pollution "IOP (post API self-reset — API-resistant rows)"
   results/*/output.xml || true
 # 2) ONE failures-only file (same generator/format everywhere): etsi-failures.md.
 python3 report_failures.py 'results/*/output.xml' etsi-failures.md || true
+# 3) RAM report: stop the sampler, write results/{memory-report.md,memory-usage.png}.
+kill "$MEM_PID" 2>/dev/null; wait "$MEM_PID" 2>/dev/null
+PYTHON="$(pwd)/.venv/bin/python" "$REPO/dev/mem-monitor.sh" report "$MEM_CSV" results || true
 
 echo "=== ETSI serial run complete ==="
 echo "  full report : $SUITE/results/report.html  (+ output.xml, log.html)"
 echo "  failures    : $SUITE/etsi-failures.md"
 echo "  pollution   : $SUITE/results/pollution-report.md  (leftover DB rows per suite, pre-erase)"
+echo "  RAM         : $SUITE/results/memory-report.md + memory-usage.png (per-container, whole run)"

@@ -66,6 +66,8 @@ jobs:
             # DB pollution report: leftover rows captured BEFORE each between-suite erase, so
             # polluted state is visible in CI instead of being silently truncated away.
             cat ngsi-ld-test-suite/results/pollution-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            # RAM stats (min/median/mean/max per container); the chart PNG is in the artifact zip.
+            cat ngsi-ld-test-suite/results/memory-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           else
             echo "No etsi-failures.md produced — the suite likely did not run; check the logs." >> "$GITHUB_STEP_SUMMARY"
             docker compose -p iop -f compose-files/docker-compose-iop.yml logs --tail 80 || true
