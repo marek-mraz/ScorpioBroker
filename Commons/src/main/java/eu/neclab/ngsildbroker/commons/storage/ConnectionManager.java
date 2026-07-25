@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import jakarta.annotation.PostConstruct;
@@ -116,7 +117,7 @@ public class ConnectionManager {
 
 	private String reactiveBaseUrl;
 
-	private Map<String, PgPool> tenant2Client = Maps.newHashMap();
+	private Map<String, PgPool> tenant2Client = new ConcurrentHashMap<>();
 
 	public Map<String, String> testTenantClients() {
 		Map<String, String> statusMap = Maps.newHashMap();
@@ -273,11 +274,13 @@ public class ConnectionManager {
 													.connectionProviderClassName(jdbcDriver).autoCommit(false)
 													.principal(new NamePrincipal(username))
 													.credential(new SimplePassword(password))));
-					AgroalDataSource agroaldataSource = AgroalDataSource.from(configuration);
-					if (flywayValidateAndMigrate(agroaldataSource, tenantidvalue, tenantDatabaseName)){
-						return tenantDatabaseName;
-					} else {
-						throw new Exception("Failed to validate or migrate database for tenant " + tenantidvalue);
+					// this datasource exists only to run Flyway — it must not outlive the migration
+					try (AgroalDataSource agroaldataSource = AgroalDataSource.from(configuration)) {
+						if (flywayValidateAndMigrate(agroaldataSource, tenantidvalue, tenantDatabaseName)) {
+							return tenantDatabaseName;
+						} else {
+							throw new Exception("Failed to validate or migrate database for tenant " + tenantidvalue);
+						}
 					}
 				}));
 

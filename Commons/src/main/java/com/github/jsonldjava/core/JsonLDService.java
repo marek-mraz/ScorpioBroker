@@ -49,9 +49,7 @@ public class JsonLDService {
 
 	@PostConstruct
 	void startup() {
-		WebClientOptions options = new WebClientOptions();
-
-		this.webClient = WebClient.create(vertx, options);
+		this.webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 
 		this.coreContext = connectionManager.executeQuery(null,
 				"SELECT body FROM contexts WHERE id='" + AppConstants.INTERNAL_NULL_KEY + "'", null, false).onItem()

@@ -129,7 +129,10 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 		buffer.add(message);
 		tenant2LastReceived.put(tenant, System.currentTimeMillis());
 		logger.debug("history manager got called for entity: " + message.getIds());
-		if (inMemoryActive) {
+		// flush inline when the buffer is over the trigger size: with PRE_PROCESSING acks the
+		// scheduled flush provides no backpressure, so an unbounded queue would grow whenever
+		// the DB is slower than ingest. Returning the flush Uni throttles the channel instead.
+		if (inMemoryActive || buffer.size() >= maxSize) {
 			return flushTenant(tenant);
 		}
 		return Uni.createFrom().voidItem();
@@ -186,7 +189,8 @@ public abstract class HistoryMessagingBase implements BaseRequestHandler {
 				}
 			}
 		}
-		if (inMemoryActive) {
+		// see baseHandleEntity: inline flush bounds the buffer under PRE_PROCESSING acks
+		if (inMemoryActive || buffer.size() >= maxSize) {
 			return flushTenant(tenant);
 		}
 		return Uni.createFrom().voidItem();

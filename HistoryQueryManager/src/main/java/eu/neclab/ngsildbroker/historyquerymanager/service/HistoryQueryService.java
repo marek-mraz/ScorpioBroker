@@ -88,7 +88,7 @@ public class HistoryQueryService implements CSourceHandler {
 
 	@PostConstruct
 	void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		historyDAO.getAllRegistries().onItem().transform(t -> {
 			tenant2CId2RegEntries = t;
 			return null;
@@ -389,6 +389,10 @@ public class HistoryQueryService implements CSourceHandler {
 
 		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(tenant).values()) {
 			for (RegistrationEntry regEntry : regEntries) {
+				// NGSI-LD 5.2.9: a registration past its expiresAt is invalid — never forward to it
+				if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
+					continue;
+				}
 				if (!regEntry.retrieveTemporal()) {
 					continue;
 				}
@@ -437,6 +441,10 @@ public class HistoryQueryService implements CSourceHandler {
 		Set<String> types = new HashSet<>(Arrays.asList(queryMap.getOrDefault("type", "").split(",")));
 		for (List<RegistrationEntry> regEntries : tenant2CId2RegEntries.row(tenant).values()) {
 			for (RegistrationEntry regEntry : regEntries) {
+				// NGSI-LD 5.2.9: a registration past its expiresAt is invalid — never forward to it
+				if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
+					continue;
+				}
 				if (!regEntry.retrieveTemporal()) {
 					continue;
 				}

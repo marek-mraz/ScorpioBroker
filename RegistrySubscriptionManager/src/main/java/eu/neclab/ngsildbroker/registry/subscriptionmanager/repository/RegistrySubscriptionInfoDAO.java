@@ -48,7 +48,7 @@ public class RegistrySubscriptionInfoDAO {
 
 	@PostConstruct
 	void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 	}
 
 	public Uni<RowSet<Row>> createSubscription(SubscriptionRequest request) {

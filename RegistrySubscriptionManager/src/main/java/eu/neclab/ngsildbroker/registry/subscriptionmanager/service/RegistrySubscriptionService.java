@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.PostConstruct;
@@ -100,7 +101,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 
 	private WebClient webClient;
 
-	private Map<String, MqttClient> host2MqttClient = Maps.newHashMap();
+	private Map<String, MqttClient> host2MqttClient = new ConcurrentHashMap<>();
 
 	private SyncService subscriptionSyncService;
 
@@ -119,7 +120,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 
 	@PostConstruct
 	void startup() {
-		this.webClient = WebClient.create(vertx);
+		this.webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		ALL_TYPES_SUB = NGSIConstants.NGSI_LD_DEFAULT_PREFIX + allTypeSubType;
 		regDAO.loadSubscriptions().onItem().transformToUni(subs -> {
 			List<Uni<Tuple2<Tuple2<String, Map<String, Object>>, Context>>> unis = Lists.newArrayList();
@@ -627,8 +628,11 @@ public class RegistrySubscriptionService implements CSourceHandler {
 								return Uni.createFrom().voidItem();
 						}
 						if (potentialSub.getSubscription().getThrottling() > 0) {
-							long delay = potentialSub.getSubscription().getThrottling() - (System.currentTimeMillis()
-									- potentialSub.getSubscription().getNotification().getLastNotification());
+							// NGSI-LD 5.2.14: throttling is expressed in SECONDS; the elapsed
+							// difference below is in milliseconds.
+							long delay = potentialSub.getSubscription().getThrottling() * 1000L
+									- (System.currentTimeMillis()
+											- potentialSub.getSubscription().getNotification().getLastNotification());
 							if (delay > 0) {
 								return Uni.createFrom().voidItem().onItem().delayIt().by(Duration.ofMillis(delay))
 										.onItem().transformToUni(v -> toSend);
@@ -644,10 +648,17 @@ public class RegistrySubscriptionService implements CSourceHandler {
 		String hostString = host.getHost() + host.getPort();
 		MqttClient client;
 		if (!host2MqttClient.containsKey(hostString)) {
-			client = MqttClient.create(vertx);
-			return client.connect(host.getPort(), host.getHost()).onItem().transform(t -> {
-				host2MqttClient.put(hostString, client);
-				return client;
+			MqttClient created = MqttClient.create(vertx);
+			return created.connect(host.getPort(), host.getHost()).onItem().transform(t -> {
+				MqttClient winner = host2MqttClient.putIfAbsent(hostString, created);
+				if (winner != null) {
+					// lost the creation race — close our connection, reuse the winner's
+					created.disconnect().subscribe().with(v -> {
+					}, e -> {
+					});
+					return winner;
+				}
+				return created;
 			});
 		} else {
 			client = host2MqttClient.get(hostString);
@@ -1389,6 +1400,7 @@ public class RegistrySubscriptionService implements CSourceHandler {
 	public Uni<Void> handleInternalSubscription(SubscriptionRequest message) {
 		if (message.getRequestType() == AppConstants.DELETE_SUBSCRIPTION_REQUEST || message.getPayload() == null) {
 			tenant2subscriptionId2Subscription.remove(message.getTenant(), message.getId());
+			tenant2subscriptionId2IntervalSubscription.remove(message.getTenant(), message.getId());
 			return Uni.createFrom().voidItem();
 		}
 		try {

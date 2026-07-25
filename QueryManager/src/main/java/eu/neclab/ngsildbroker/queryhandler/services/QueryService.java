@@ -108,7 +108,7 @@ public class QueryService implements CSourceHandler {
 
 	@PostConstruct
 	void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		queryDAO.getAllRegistries().onItem().transform(t -> {
 			tenant2CId2RegEntries = t;
 			return null;

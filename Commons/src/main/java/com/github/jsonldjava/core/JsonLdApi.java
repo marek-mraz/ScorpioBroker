@@ -988,7 +988,7 @@ public class JsonLdApi {
 				List<Map<String, Object>> instanceId = (List<Map<String, Object>>) attribMap
 						.remove(NGSIConstants.NGSI_LD_INSTANCE_ID);
 				List<Map<String, Object>> unitCode = (List<Map<String, Object>>) attribMap
-						.remove(NGSIConstants.NGSI_LD_INSTANCE_ID);
+						.remove(NGSIConstants.NGSI_LD_UNIT_CODE);
 				List<Map<String, String>> objectType = (List<Map<String, String>>) attribMap
 						.remove(NGSIConstants.NGSI_LD_OBJECT_TYPE);
 				List<Map<String, Object>> entity = (List<Map<String, Object>>) attribMap

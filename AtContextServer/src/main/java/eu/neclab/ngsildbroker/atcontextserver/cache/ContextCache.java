@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 @Startup
@@ -56,14 +57,17 @@ public class ContextCache {
 	@Inject
 	MicroServiceUtils microServiceUtils;
 
-	Map<String, Long> id2numberOfHit = new HashMap<>();
-	Map<String, String> id2LastUsage = new HashMap<>();
+	// mutated from reactive pipelines — must be concurrent; bounded to survive
+	// clients feeding unlimited distinct @context URLs (same key space as the cache)
+	private static final int MAX_STAT_ENTRIES = 10000;
+	Map<String, Long> id2numberOfHit = new ConcurrentHashMap<>();
+	Map<String, String> id2LastUsage = new ConcurrentHashMap<>();
 	String atContextUrl;
 	Duration cacheDuration;
 
 	@PostConstruct
 	void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		atContextUrl = microServiceUtils.getGatewayString() + NGSIConstants.JSONLD_CONTEXTS;
 		if (!cacheDurationTime.startsWith("PT")) {
 			cacheDurationTime = "PT" + cacheDurationTime;
@@ -125,6 +129,11 @@ public class ContextCache {
 		Set<Object> cacheSet = cache.as(CaffeineCache.class).keySet();
 		if (!loadNewCache && !cacheSet.contains(uri)) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.NotFound, "Context was not found"));
+		}
+		if (!id2numberOfHit.containsKey(uri) && id2numberOfHit.size() >= MAX_STAT_ENTRIES) {
+			// bound the stat maps: drop stats for uris the cache itself has evicted
+			id2numberOfHit.keySet().retainAll(cacheSet);
+			id2LastUsage.keySet().retainAll(cacheSet);
 		}
 		long hit = id2numberOfHit.getOrDefault(uri, 0L) + 1;
 		id2numberOfHit.put(uri, hit);

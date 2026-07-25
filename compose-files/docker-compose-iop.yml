@@ -14,24 +14,30 @@ x-postgres-tmpl: &postgres-tmpl
   networks:
     - scorpio-net
 
-x-kafka-env: &kafka-env
-  KAFKA_NODE_ID: 1
-  KAFKA_PROCESS_ROLES: broker,controller
-  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-  KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-  KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
-  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-
-x-kafka-tmpl: &kafka-tmpl
-  image: apache/kafka:3.8.1
-  environment: *kafka-env
-  networks:
-    - scorpio-net
+# kafka services are COMMENTED OUT for now: the scorpio-local image is built with the
+# in-memory messaging profile (dev/build-image.sh in-memory), so the brokers never
+# connect to kafka — the 5 containers were ~5 GB of unused RSS per stack.
+# To re-enable: uncomment the x-kafka-* anchors, the kafkaN services and the
+# "kafkaN: { condition: service_started }" depends_on lines, and build the image
+# with the kafka profile.
+# x-kafka-env: &kafka-env
+#   KAFKA_NODE_ID: 1
+#   KAFKA_PROCESS_ROLES: broker,controller
+#   KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+#   KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+#   KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+#   KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+#   KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#   KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+#   KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+#   KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+#   CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+#
+# x-kafka-tmpl: &kafka-tmpl
+#   image: apache/kafka:3.8.1
+#   environment: *kafka-env
+#   networks:
+#     - scorpio-net
 
 x-mqtt-tmpl: &mqtt-tmpl
   image: emqx:latest
@@ -48,17 +54,17 @@ x-scorpio-tmpl: &scorpio-tmpl
 
 services:
   # ==============================
-  # BROKER 1 (own postgres + kafka; ONE shared emqx 'mqtt' for ALL brokers — only the 058 MQTT suite
+  # BROKER 1 (own postgres; ONE shared emqx 'mqtt' for ALL brokers — only the 058 MQTT suite
   # uses it, and only against broker1. Dev/federation need no MQTT; brokers never depends_on it.)
   # ==============================
   postgres: { <<: *postgres-tmpl, container_name: scorpio-postgres-1 }
   mqtt: { <<: *mqtt-tmpl, container_name: scorpio-mqtt-1 }
-  kafka:
-    <<: *kafka-tmpl
-    container_name: scorpio-kafka-1
-    environment:
-      <<: *kafka-env
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+  # kafka:
+  #   <<: *kafka-tmpl
+  #   container_name: scorpio-kafka-1
+  #   environment:
+  #     <<: *kafka-env
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
   scorpio1:
     <<: *scorpio-tmpl
     container_name: scorpio-broker-1
@@ -72,18 +78,18 @@ services:
       SCORPIO_STARTUPDELAY: 15s
     depends_on:
       postgres: { condition: service_healthy }
-      kafka: { condition: service_started }
+      # kafka: { condition: service_started }
 
   # ==============================
   # BROKER 2
   # ==============================
   postgres2: { <<: *postgres-tmpl, container_name: scorpio-postgres-2 }
-  kafka2:
-    <<: *kafka-tmpl
-    container_name: scorpio-kafka-2
-    environment:
-      <<: *kafka-env
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+  # kafka2:
+  #   <<: *kafka-tmpl
+  #   container_name: scorpio-kafka-2
+  #   environment:
+  #     <<: *kafka-env
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
   scorpio2:
     <<: *scorpio-tmpl
     container_name: scorpio-broker-2
@@ -95,18 +101,18 @@ services:
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9082"
       GATEWAY: "http://scorpio2:9090"
       SCORPIO_STARTUPDELAY: 15s
-    depends_on: { postgres2: { condition: service_healthy }, kafka2: { condition: service_started } }
+    depends_on: { postgres2: { condition: service_healthy } }
 
   # ==============================
   # BROKER 3
   # ==============================
   postgres3: { <<: *postgres-tmpl, container_name: scorpio-postgres-3 }
-  kafka3:
-    <<: *kafka-tmpl
-    container_name: scorpio-kafka-3
-    environment:
-      <<: *kafka-env
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+  # kafka3:
+  #   <<: *kafka-tmpl
+  #   container_name: scorpio-kafka-3
+  #   environment:
+  #     <<: *kafka-env
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
   scorpio3:
     <<: *scorpio-tmpl
     container_name: scorpio-broker-3
@@ -118,18 +124,18 @@ services:
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9083"
       GATEWAY: "http://scorpio3:9090"
       SCORPIO_STARTUPDELAY: 15s
-    depends_on: { postgres3: { condition: service_healthy }, kafka3: { condition: service_started } }
+    depends_on: { postgres3: { condition: service_healthy } }
 
   # ==============================
   # BROKER 4
   # ==============================
   postgres4: { <<: *postgres-tmpl, container_name: scorpio-postgres-4 }
-  kafka4:
-    <<: *kafka-tmpl
-    container_name: scorpio-kafka-4
-    environment:
-      <<: *kafka-env
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka4:9092
+  # kafka4:
+  #   <<: *kafka-tmpl
+  #   container_name: scorpio-kafka-4
+  #   environment:
+  #     <<: *kafka-env
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka4:9092
   scorpio4:
     <<: *scorpio-tmpl
     container_name: scorpio-broker-4
@@ -141,18 +147,18 @@ services:
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9084"
       GATEWAY: "http://scorpio4:9090"
       SCORPIO_STARTUPDELAY: 15s
-    depends_on: { postgres4: { condition: service_healthy }, kafka4: { condition: service_started } }
+    depends_on: { postgres4: { condition: service_healthy } }
 
   # ==============================
   # BROKER 5
   # ==============================
   postgres5: { <<: *postgres-tmpl, container_name: scorpio-postgres-5 }
-  kafka5:
-    <<: *kafka-tmpl
-    container_name: scorpio-kafka-5
-    environment:
-      <<: *kafka-env
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka5:9092
+  # kafka5:
+  #   <<: *kafka-tmpl
+  #   container_name: scorpio-kafka-5
+  #   environment:
+  #     <<: *kafka-env
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka5:9092
   scorpio5:
     <<: *scorpio-tmpl
     container_name: scorpio-broker-5
@@ -164,7 +170,7 @@ services:
       SCORPIO_GATEWAY_URL: "http://host.docker.internal:9085"
       GATEWAY: "http://scorpio5:9090"
       SCORPIO_STARTUPDELAY: 15s
-    depends_on: { postgres5: { condition: service_healthy }, kafka5: { condition: service_started } }
+    depends_on: { postgres5: { condition: service_healthy } }
 
 networks:
   scorpio-net:

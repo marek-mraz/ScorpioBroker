@@ -1006,7 +1006,8 @@ public final class EntityTools {
 
 					RegistrationEntry regEntry = tenantRegs.next();
 					if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
-						it.remove();
+						// evict only the expired entry, not the csource's whole registration list
+						tenantRegs.remove();
 						continue;
 					}
 					// queryEntity/queryBatch cover the query path; retrieveEntity must also be admitted so a

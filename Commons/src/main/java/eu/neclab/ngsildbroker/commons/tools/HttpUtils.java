@@ -64,6 +64,7 @@ import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.mutiny.core.buffer.Buffer;
+import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
 import io.vertx.mutiny.ext.web.client.HttpResponse;
 import io.vertx.mutiny.ext.web.client.WebClient;
@@ -1444,6 +1445,42 @@ public final class HttpUtils {
 		});
 	}
 
+	/**
+	 * Single factory for all broker WebClients. The Vert.x defaults are unbounded
+	 * (maxWaitQueueSize=-1, no timeouts): one dead notification/forwarding endpoint
+	 * saturates its 5 connections and every later request for that host queues
+	 * forever, pinning its full serialized body. Bounded queue + timeouts make a
+	 * dead endpoint fail fast instead (failures are recorded per NGSI-LD 5.8.6).
+	 */
+	public static WebClient createWebClient(io.vertx.mutiny.core.Vertx vertx) {
+		WebClientOptions options = new WebClientOptions().setConnectTimeout(5000).setIdleTimeout(120)
+				.setMaxWaitQueueSize(1000);
+		return WebClient.create(vertx, options);
+	}
+
+	// replaces a payload.toString().contains("value=null") scan that serialized the
+	// whole payload map to a String twice per write
+	private static boolean containsNullValueOrType(Object node) {
+		if (node instanceof Map<?, ?> map) {
+			for (Map.Entry<?, ?> entry : map.entrySet()) {
+				if (entry.getValue() == null && (NGSIConstants.VALUE.equals(entry.getKey())
+						|| NGSIConstants.TYPE.equals(entry.getKey()))) {
+					return true;
+				}
+				if (containsNullValueOrType(entry.getValue())) {
+					return true;
+				}
+			}
+		} else if (node instanceof List<?> list) {
+			for (Object item : list) {
+				if (containsNullValueOrType(item)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	public static Uni<Tuple2<Context, Map<String, Object>>> expandBody(HttpServerRequest request,
 			Map<String, Object> originalPayload, int payloadType, JsonLDService ldService) {
 		boolean atContextAllowed;
@@ -1451,8 +1488,7 @@ public final class HttpUtils {
 		if (originalPayload == null) {
 			return Uni.createFrom().failure(new ResponseException(ErrorType.BadRequestData, "body can not be empty"));
 		}
-		if (originalPayload.toString().contains(NGSIConstants.VALUE + "=null")
-				|| originalPayload.toString().contains(NGSIConstants.TYPE + "=null")) {
+		if (containsNullValueOrType(originalPayload)) {
 			return Uni.createFrom()
 					.failure(new ResponseException(ErrorType.BadRequestData, "null values are not allowed in NGSI-LD"));
 		}

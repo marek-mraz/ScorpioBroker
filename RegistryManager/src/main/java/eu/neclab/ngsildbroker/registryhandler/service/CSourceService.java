@@ -105,7 +105,7 @@ public class CSourceService {
 
 	@PostConstruct
 	void startup() {
-		this.webClient = WebClient.create(vertx);
+		this.webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		if (FED_BROKERS_CONFIG.equals("none")) {
 			FED_BROKERS = new String[0];
 		} else {

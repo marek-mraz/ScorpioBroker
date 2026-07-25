@@ -394,7 +394,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 	@PostConstruct
 	void startup() {
 		logger.info("Starting SubscriptionService initialization - loading subscriptions and registries");		
-		this.webClient = WebClient.create(vertx);
+		this.webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		ALL_TYPES_SUB = NGSIConstants.NGSI_LD_DEFAULT_PREFIX + allTypeSubType;
 		Uni<Void> loadSubs = subDAO.loadSubscriptions().onItem().transformToUni(subs -> {
 			List<Uni<Tuple4<String, Map<String, Object>, String, Context>>> unis = Lists.newArrayList();
@@ -623,7 +623,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		Set<SubscriptionRemoteHost> toStore = Sets.newHashSet();
 		remoteHosts.forEach(remoteHost -> {
 			synchronized (tableLock) {
-				Set<String> existingSubIds = tenant2RemoteHost2SubIds.get(tenant, remoteHosts);
+				Set<String> existingSubIds = tenant2RemoteHost2SubIds.get(tenant, remoteHost);
 				Set<SubscriptionRemoteHost> existingRemoteHosts = tenant2SubIds2RemoteHosts.get(tenant, subId);
 
 				if (existingSubIds == null) {
@@ -680,7 +680,10 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		String uuid = Long.toString(UUID.randomUUID().getLeastSignificantBits());
 		List<SubscriptionRequest> reqList = Lists.newArrayList(req);
 		remoteNotifyCallbackId2SubRequest.put(uuid, reqList);
-		subRemoteRequest2RemoteNotifyCallbackId.put(remoteHost, uuid);
+		String oldUuid = subRemoteRequest2RemoteNotifyCallbackId.put(remoteHost, uuid);
+		if (oldUuid != null) {
+			remoteNotifyCallbackId2SubRequest.remove(oldUuid);
+		}
 		return uuid;
 	}
 
@@ -692,11 +695,13 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		subs.forEach(sub -> {
 			String tenant = sub.tenant();
 			synchronized (tableLock) {
-				Set<String> activeSubsForRemote = tenant2RemoteHost2SubIds.get(tenant, subId);
-				activeSubsForRemote.remove(subId);
-				if (activeSubsForRemote.isEmpty()) {
-					tenant2RemoteHost2SubIds.remove(tenant, subId);
-					unis.add(SubscriptionTools.unsubsribeRemote(sub, webClient));
+				Set<String> activeSubsForRemote = tenant2RemoteHost2SubIds.get(tenant, sub);
+				if (activeSubsForRemote != null) {
+					activeSubsForRemote.remove(subId);
+					if (activeSubsForRemote.isEmpty()) {
+						tenant2RemoteHost2SubIds.remove(tenant, sub);
+						unis.add(SubscriptionTools.unsubsribeRemote(sub, webClient));
+					}
 				}
 			}
 		});
@@ -1551,6 +1556,18 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		if (dataToSend == null || dataToSend.isEmpty()) {
 			return Uni.createFrom().voidItem();
 		}
+		if (potentialSub.getSubscription().getThrottling() > 0) {
+			// NGSI-LD 5.8.2.4: throttling is the minimum period between consecutive
+			// notifications — a notification that would fire within that window is
+			// dropped, not deferred-then-sent. Checked BEFORE the notification is
+			// generated so a dropped notification costs no compaction/serialization.
+			long sinceLast = System.currentTimeMillis()
+					- potentialSub.getSubscription().getNotification().getLastNotification();
+			// throttling is expressed in seconds; sinceLast is in milliseconds.
+			if (sinceLast < potentialSub.getSubscription().getThrottling() * 1000L) {
+				return Uni.createFrom().voidItem();
+			}
+		}
 		// NGSI-LD 4.5.5 / 5.8.6: a subscription datasetId member filters notified attribute
 		// instances to the matching datasetId(s); a single remaining instance compacts to an object.
 		DataSetIdTerm datasetIdTerm = potentialSub.getSubscription().getDatasetIdTerm();
@@ -1695,18 +1712,6 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 							return Uni.createFrom().voidItem();
 						}
 					}
-					if (potentialSub.getSubscription().getThrottling() > 0) {
-						// NGSI-LD 5.8.2.4: throttling is the minimum period between consecutive
-						// notifications — a notification that would fire within that window is
-						// dropped, not deferred-then-sent.
-						long sinceLast = System.currentTimeMillis()
-								- potentialSub.getSubscription().getNotification().getLastNotification();
-						// throttling is expressed in seconds; sinceLast is in milliseconds.
-						if (sinceLast < potentialSub.getSubscription().getThrottling() * 1000L) {
-							return Uni.createFrom().voidItem();
-						}
-						return toSend;
-					}
 					return toSend;
 				});
 
@@ -1813,10 +1818,17 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 				options.setPemKeyCertOptions(certOptions);
 			}
 
-			client = MqttClient.create(vertx, options);
-			return client.connect(mqttPort, host.getHost()).onItem().transform(t -> {
-				host2MqttClient.put(hostString, client);
-				return client;
+			MqttClient created = MqttClient.create(vertx, options);
+			return created.connect(mqttPort, host.getHost()).onItem().transform(t -> {
+				MqttClient winner = host2MqttClient.putIfAbsent(hostString, created);
+				if (winner != null) {
+					// lost the creation race — close our connection, reuse the winner's
+					created.disconnect().subscribe().with(v -> {
+					}, e -> {
+					});
+					return winner;
+				}
+				return created;
 			});
 		} else {
 			client = host2MqttClient.get(hostString);
@@ -1916,23 +1928,8 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 					Map<String, Object> entity = ((JsonObject) entityObj).getMap();
 					String entityId = (String) entity.get(NGSIConstants.JSON_LD_ID);
 					joinSource.put(entityId, entity);
-					List<Map<String, Object>> prevPayloadList = prevPayloadToUse.get(entityId);
-					if (prevPayloadList != null) {
-						for (Map<String, Object> prevPayload : prevPayloadList) {
-							Map<String, Object> dupl = MicroServiceUtils.deepCopyMap(entity);
-							mergePrevIntoQueryResult(prevPayload, dupl);
-						}
-					} else {
-						List<Map<String, Object>> payloadList = payloadToUse.get(entityId);
-						if (payloadList != null) {
-							for (Map<String, Object> payload : payloadList) {
-								Map<String, Object> dupl = MicroServiceUtils.deepCopyMap(entity);
-								mergePrevIntoQueryResult(payload, dupl);
-							}
-
-						} else {
-							payloadToUse.put(entityId, Lists.newArrayList(entity));
-						}
+					if (prevPayloadToUse.get(entityId) == null && payloadToUse.get(entityId) == null) {
+						payloadToUse.put(entityId, Lists.newArrayList(entity));
 					}
 				});
 				List<Map<String, Object>> dataToNotify = mergePrevAndNew(payloadToUse, prevPayloadToUse,
@@ -2223,6 +2220,12 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 
 	@PreDestroy
 	public void unsubscribeToAllRemote() {
+		for (MqttClient mqttClient : host2MqttClient.values()) {
+			mqttClient.disconnect().subscribe().with(v -> {
+			}, e -> {
+			});
+		}
+		host2MqttClient.clear();
 		List<Uni<Void>> unis = new ArrayList<>(subRemoteRequest2RemoteNotifyCallbackId.size());
 		for (SubscriptionRemoteHost entry : subRemoteRequest2RemoteNotifyCallbackId.keySet()) {
 			logger.debug("Unsubscribing to remote host " + entry + " before shutdown");
@@ -2237,6 +2240,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 		synchronized (tableLock) {
 			tenant2subscriptionId2IntervalSubscription.remove(tenant, subId);
 			tenant2subscriptionId2Subscription.remove(tenant, subId);
+			subscriptionId2RequestGlobal.remove(subId);
 		}
 		return Uni.createFrom().voidItem();
 	}
@@ -2246,6 +2250,7 @@ public class SubscriptionService implements CSourceHandler, BaseRequestHandler {
 			synchronized (tableLock) {
 				tenant2subscriptionId2IntervalSubscription.remove(tenant, subId);
 				tenant2subscriptionId2Subscription.remove(tenant, subId);
+				subscriptionId2RequestGlobal.remove(subId);
 			}
 			return null;
 		}).onItem().transformToUni(rows -> {

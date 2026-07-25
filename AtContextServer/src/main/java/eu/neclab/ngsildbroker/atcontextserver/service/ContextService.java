@@ -38,7 +38,7 @@ public class ContextService {
 
 	@PostConstruct
 void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 	}
 
 	public Uni<Map<String, Object>> getContextById(String id, boolean details) {

@@ -107,7 +107,7 @@ public class QueryDAO {
 			if (attrsQuery != null && !attrsQuery.getAttrs().isEmpty() && result.size() <= 4) {
 				return Uni.createFrom().failure(new ResponseException(ErrorType.CombinationNotFound));
 			}
-			return Uni.createFrom().item(t.iterator().next().getJsonObject(0).getMap());
+			return Uni.createFrom().item(result);
 		});
 
 	}
@@ -880,7 +880,7 @@ public class QueryDAO {
 					entityMap.put(currentEntityID, cIds);
 					lastEntityId = currentEntityID;
 				}
-				cIds.add(first.getString(1));
+				cIds.add(row.getString(1));
 			}
 			result.put(NGSIConstants.NGSI_LD_ENTITY_MAP_SHORT, entityMap);
 			return Uni.createFrom().item(result);

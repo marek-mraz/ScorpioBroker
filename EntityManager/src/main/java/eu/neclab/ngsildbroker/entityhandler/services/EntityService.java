@@ -127,7 +127,7 @@ public class EntityService implements CSourceHandler {
 
 	@PostConstruct
 	void startup() {
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		entityDAO.getAllRegistries().onItem().transform(t -> {
 			tenant2CId2RegEntries = t;
 			return null;
@@ -2861,7 +2861,8 @@ public class EntityService implements CSourceHandler {
 
 				RegistrationEntry regEntry = tenantRegs.next();
 				if (regEntry.expiresAt() > 0 && regEntry.expiresAt() <= System.currentTimeMillis()) {
-					it.remove();
+					// evict only the expired entry, not the csource's whole registration list
+					tenantRegs.remove();
 					continue;
 				}
 				if ((((regEntry.eId() != null && regEntry.eId().equals(id))

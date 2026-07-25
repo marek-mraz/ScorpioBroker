@@ -97,7 +97,7 @@ public class HistoryEntityService implements CSourceHandler {
 			tenant2CId2RegEntries = t;
 			return null;
 		}).await().indefinitely();
-		webClient = WebClient.create(vertx);
+		webClient = eu.neclab.ngsildbroker.commons.tools.HttpUtils.createWebClient(vertx);
 		this.microServiceUtils.registerCSourceReceiver(this);
 	}
 
