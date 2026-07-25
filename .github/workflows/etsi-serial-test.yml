@@ -1,4 +1,4 @@
-name: Build and run ETSI Test (Serial) and publish docker image
+name: Build and run ETSI Test and publish 
 
 on:
   workflow_dispatch: # Manual trigger only
