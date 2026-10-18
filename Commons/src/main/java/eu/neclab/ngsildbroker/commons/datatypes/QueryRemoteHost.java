@@ -89,8 +89,11 @@ public class QueryRemoteHost {
 		this.tenant = tenant;
 	}
 
+	// a copy per call: one QueryRemoteHost is shared by every concurrent query to the same
+	// registration, and callers set Link/Accept on what they get back; set() on the shared
+	// map from two event-loop threads corrupts it (NPE, HTTP 500 under load)
 	public MultiMap headers() {
-		return headers;
+		return headers == null ? null : MultiMap.caseInsensitiveMultiMap().addAll(headers);
 	}
 
 	public void setHeaders(MultiMap headers) {
