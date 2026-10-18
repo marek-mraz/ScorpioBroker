@@ -170,10 +170,11 @@ public class DBUtil {
 					unis.add(connectionManager.executeQuery(null, sql, null, false).onItem()
 							.transform(rows -> Tuple2.of(AppConstants.INTERNAL_NULL_KEY, rows)));
 					while (it.hasNext()) {
-						unis.add(connectionManager.executeQuery(it.next().getString(0), sql, null, false).onItem()
-								.transform(
-										tenantReg -> Tuple2.of(AppConstants.INTERNAL_NULL_KEY, tenantReg)));
-
+						// key by the tenant, not the default key: otherwise every tenant's registrations
+						// load under the default tenant at startup and a query for the tenant finds none
+						String tenantId = it.next().getString(0);
+						unis.add(connectionManager.executeQuery(tenantId, sql, null, false).onItem()
+								.transform(tenantReg -> Tuple2.of(tenantId, tenantReg)));
 					}
 					return Uni.combine().all().unis(unis).with(list -> {
 						Table<String, String, List<RegistrationEntry>> result = HashBasedTable.create();
