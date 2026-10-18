@@ -875,7 +875,11 @@ public class HistoryDAO {
 			if (idsAndTypeAndIdPattern != null && !idsAndTypeAndIdPattern.isEmpty()) {
 				sql.append(" AND ");
 			}
+			// Parenthesize: the scope term emits a flat a or b chain, which would
+			// otherwise bind only its first disjunct to the preceding AND filters.
+			sql.append("(");
 			scopeQuery.toSql(sql);
+			sql.append(")");
 		}
 		if (geoQuery != null) {
 			if ((idsAndTypeAndIdPattern != null && !idsAndTypeAndIdPattern.isEmpty()) || scopeQuery != null) {

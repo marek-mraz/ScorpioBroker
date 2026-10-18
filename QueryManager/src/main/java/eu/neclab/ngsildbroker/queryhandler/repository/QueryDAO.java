@@ -1185,7 +1185,11 @@ public class QueryDAO {
 		if (regEmptyOrNoRegEntryAndNoLinkedQuery || noRootLevelRegEntryAndLinkedQuery || !splitEntities) {
 			if (scopeQuery != null) {
 				query.append(" AND ");
+				// Parenthesize: the scope term emits a flat a or b chain, which would
+				// otherwise bind only its first disjunct to the preceding AND filters.
+				query.append("(");
 				scopeQuery.toSql(query);
+				query.append(")");
 			}
 		}
 		char[] checkArray = new char[AppConstants.CHAR_ARRAY_WHERE.length];
