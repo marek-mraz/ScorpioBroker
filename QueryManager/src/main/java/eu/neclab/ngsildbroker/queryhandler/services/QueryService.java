@@ -1788,17 +1788,18 @@ public class QueryService implements CSourceHandler {
 							// todo check how to solve this proper once and for all
 							Context contextTBU = remoteHost.context();
 							List<String> ogAtContext = contextTBU.getOriginalAtContext();
+							// per-request copy: remoteHost.headers() is shared by concurrent queries to the
+							// same host, and set() on it from two event-loop threads corrupts the map (NPE)
+							MultiMap headers = MultiMap.caseInsensitiveMultiMap().addAll(remoteHost.headers());
 							if (ogAtContext != null && !ogAtContext.isEmpty()) {
-								// set, not add: remoteHost.headers() is shared and this path can run
-								// repeatedly for the same host — add() grows the header map unboundedly
-								remoteHost.headers().set(HttpHeaders.LINK, "<" + ogAtContext.get(0)
+								headers.set(HttpHeaders.LINK, "<" + ogAtContext.get(0)
 										+ ">; rel=\"http://www.w3.org/ns/json-ld#context\"; type=\"application/ld+json\"");
 							}
-							remoteHost.headers().set(HttpHeaders.ACCEPT, AppConstants.NGB_APPLICATION_JSON);
+							headers.set(HttpHeaders.ACCEPT, AppConstants.NGB_APPLICATION_JSON);
 
 							unisForEntityMapRetrieval.add(HttpUtils
 									.connect(webClient, remoteHost.host() + NGSIConstants.NGSI_LD_ENTITY_MAP_ENDPOINT,
-											tenant, AppConstants.GET_OP, null, queryParams, remoteHost.headers(), null,
+											tenant, AppConstants.GET_OP, null, queryParams, headers, null,
 											viaHeaders,
 											remoteHost.getSourceAlias(), timeout)
 									.onItem().transform(response -> {
