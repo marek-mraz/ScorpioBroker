@@ -19,6 +19,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Fetch the ETSI test suite
+        run: git clone --depth 1 https://github.com/marek-mraz/ngsi-ld-test-suite.git ngsi-ld-test-suite
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:

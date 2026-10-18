@@ -1,7 +1,0 @@
-        </group>
-
-        <assign to="testSuccess">$TEST_SUCCESS</assign>
-
-        <log>"----- END TEST -----"</log>
-
-   
