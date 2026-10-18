@@ -239,73 +239,105 @@ public class QueryParser {
 		return result;
 	}
 
+	/**
+	 * Parses an NGSI-LD Scope Query (ETSI GS CIM 009 clause 4.19). Accepts the
+	 * clause 4.19 grammar, the bare conjunction "/a;/b" that the ETSI test suite
+	 * sends (019_01_06), and nested parentheses for grouping. ';' binds tighter
+	 * than ',' and '|' (clause 4.9). Every chain in the resulting tree is either
+	 * all-or or all-and, so toSql and calculate need no precedence of their own.
+	 * Malformed input raises BadRequestData.
+	 */
 	public static ScopeQueryTerm parseScopeQuery(String queryString) throws ResponseException {
 		if (queryString == null) {
 			return null;
 		}
-		ScopeQueryTerm result = new ScopeQueryTerm();
+		int[] pos = { 0 };
+		ScopeQueryTerm result = parseScopeOr(queryString, pos, null);
+		if (pos[0] != queryString.length()) {
+			throw badScope(queryString, pos[0]);
+		}
 		result.setScopeQueryString(queryString);
-		ScopeQueryTerm current = result;
-		StringBuilder scopeLevel = new StringBuilder();
-		ArrayList<String> scopeLevels = new ArrayList<String>();
-		OfInt it = queryString.chars().iterator();
-		while (it.hasNext()) {
-			char b = (char) it.next().intValue();
-			if (b == '(') {
-				ScopeQueryTerm child = new ScopeQueryTerm();
-				current.setFirstChild(child);
-				current = child;
-			} else if (b == ';') {
-				ScopeQueryTerm next = new ScopeQueryTerm();
-				if (!scopeLevel.isEmpty()) {
-					scopeLevels.add(scopeLevel.toString());
-					scopeLevel = new StringBuilder();
-				}
-				current.setScopeLevels(scopeLevels.toArray(new String[0]));
-				current.setNext(next);
-				current.setNextAnd(true);
-				current = next;
-				scopeLevels.clear();
-			} else if (b == '|' || b == ',') {
-				ScopeQueryTerm next = new ScopeQueryTerm();
-				if (!scopeLevel.isEmpty()) {
-					scopeLevels.add(scopeLevel.toString());
-					scopeLevel = new StringBuilder();
-				}
-				current.setScopeLevels(scopeLevels.toArray(new String[0]));
-				current.setNext(next);
-				current.setNextAnd(false);
-				current = next;
-				scopeLevels.clear();
-			} else if (b == ')') {
-				if (!scopeLevel.isEmpty()) {
-					scopeLevels.add(scopeLevel.toString());
-					scopeLevel = new StringBuilder();
-				}
-				current.setScopeLevels(scopeLevels.toArray(new String[0]));
-				current = current.getParent();
-				scopeLevels.clear();
+		return result;
+	}
 
-			} else if (b == '/') {
-				if (!scopeLevel.isEmpty()) {
-					scopeLevels.add(scopeLevel.toString());
-					scopeLevel = new StringBuilder();
+	private static ResponseException badScope(String q, int at) {
+		return new ResponseException(ErrorType.BadRequestData, "Bad scope query at position " + at + ": " + q);
+	}
+
+	// or-chain of and-terms
+	private static ScopeQueryTerm parseScopeOr(String q, int[] pos, ScopeQueryTerm parent) throws ResponseException {
+		ScopeQueryTerm first = parseScopeAnd(q, pos, parent);
+		ScopeQueryTerm last = first;
+		while (pos[0] < q.length() && (q.charAt(pos[0]) == ',' || q.charAt(pos[0]) == '|')) {
+			pos[0]++;
+			ScopeQueryTerm next = parseScopeAnd(q, pos, parent);
+			last.setNextAnd(false);
+			last.setNext(next);
+			last = next;
+		}
+		return first;
+	}
+
+	// a single factor, or a group node whose children form an and-chain
+	private static ScopeQueryTerm parseScopeAnd(String q, int[] pos, ScopeQueryTerm parent) throws ResponseException {
+		ScopeQueryTerm group = new ScopeQueryTerm();
+		group.setParent(parent);
+		ScopeQueryTerm first = parseScopeFactor(q, pos, group);
+		if (pos[0] >= q.length() || q.charAt(pos[0]) != ';') {
+			first.setParent(parent);
+			return first;
+		}
+		ScopeQueryTerm last = first;
+		while (pos[0] < q.length() && q.charAt(pos[0]) == ';') {
+			pos[0]++;
+			ScopeQueryTerm next = parseScopeFactor(q, pos, group);
+			last.setNextAnd(true);
+			last.setNext(next);
+			last = next;
+		}
+		group.setFirstChild(first);
+		return group;
+	}
+
+	// "(" or-expression ")" or a scope: ("/" level)+ with "+" as a level and "#" only as the last one
+	private static ScopeQueryTerm parseScopeFactor(String q, int[] pos, ScopeQueryTerm parent) throws ResponseException {
+		if (pos[0] < q.length() && q.charAt(pos[0]) == '(') {
+			pos[0]++;
+			ScopeQueryTerm group = new ScopeQueryTerm();
+			group.setParent(parent);
+			group.setFirstChild(parseScopeOr(q, pos, group));
+			if (pos[0] >= q.length() || q.charAt(pos[0]) != ')') {
+				throw badScope(q, pos[0]);
+			}
+			pos[0]++;
+			return group;
+		}
+		ArrayList<String> levels = new ArrayList<String>();
+		while (pos[0] < q.length() && q.charAt(pos[0]) == '/') {
+			pos[0]++;
+			int start = pos[0];
+			while (pos[0] < q.length() && (Character.isLetterOrDigit(q.charAt(pos[0])) || q.charAt(pos[0]) == '_')) {
+				pos[0]++;
+			}
+			if (pos[0] > start) {
+				levels.add(q.substring(start, pos[0]));
+			} else if (pos[0] < q.length() && (q.charAt(pos[0]) == '+' || q.charAt(pos[0]) == '#')) {
+				levels.add(String.valueOf(q.charAt(pos[0])));
+				pos[0]++;
+				if (levels.get(levels.size() - 1).equals("#")) {
+					break;
 				}
 			} else {
-				scopeLevel.append((char) b);
+				throw badScope(q, pos[0]);
 			}
-
 		}
-		if (!scopeLevel.isEmpty()) {
-			scopeLevels.add(scopeLevel.toString());
+		if (levels.isEmpty()) {
+			throw badScope(q, pos[0]);
 		}
-		if (!scopeLevels.isEmpty() && current != null) {
-			current.setScopeLevels(scopeLevels.toArray(new String[0]));
-		}
-		if (current != null && current.getScopeLevels() == null) {
-			throw new ResponseException(ErrorType.BadRequestData, "Bad scope query");
-		}
-		return result;
+		ScopeQueryTerm term = new ScopeQueryTerm();
+		term.setParent(parent);
+		term.setScopeLevels(levels.toArray(new String[0]));
+		return term;
 	}
 
 	public static TypeQueryTerm parseTypeQuery(String input, Context context) throws ResponseException {
